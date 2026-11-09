@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  # ----------------------------------------------------------------------------
+  # 1. Cơ sở dữ liệu MySQL 8.0
+  # ----------------------------------------------------------------------------
+  mysql:
+    image: mysql:8.0
+    container_name: multichannel_cms_mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: multichannel_cms
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./app/scripts/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-ppassword"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ----------------------------------------------------------------------------
+  # 2. Máy chủ FastAPI Backend
+  # ----------------------------------------------------------------------------
+  backend:
+    build: .
+    container_name: multichannel_cms_backend
+    restart: always
+    depends_on:
+      mysql:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      APP_ENV: development
+      DEBUG: "True"
+      HOST: "0.0.0.0"
+      PORT: "8000"
+      DB_HOST: mysql
+      DB_PORT: "3306"
+      DB_NAME: multichannel_cms
+      DB_USER: root
+      DB_PASSWORD: password
+      DATABASE_URL: "mysql+pymysql://root:password@mysql:3306/multichannel_cms?charset=utf8mb4"
+      SECRET_KEY: "rikkeilab_nhom7_multi_channel_cms_super_secret_jwt_key_2026"
+      ACCESS_TOKEN_EXPIRE_MINUTES: "60"
+    volumes:
+      - .:/app
+      - uploads_data:/app/uploads
+    command: >
+      sh -c "python app/scripts/init_db.py && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+
+volumes:
+  mysql_data:
+  uploads_data:
