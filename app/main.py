@@ -15,6 +15,7 @@ from app.routers import (
     tracking,
     analytics,
     notifications,
+    social,
 )
 from app.services.scheduler_worker import system_timer_worker
 
@@ -76,6 +77,7 @@ app.include_router(schedules.router, prefix=settings.API_V1_PREFIX)
 app.include_router(tracking.router, prefix=settings.API_V1_PREFIX)
 app.include_router(analytics.router, prefix=settings.API_V1_PREFIX)
 app.include_router(notifications.router, prefix=settings.API_V1_PREFIX)
+app.include_router(social.router, prefix=settings.API_V1_PREFIX)
 
 @app.get("/", tags=["Health Check"])
 def root_check():
