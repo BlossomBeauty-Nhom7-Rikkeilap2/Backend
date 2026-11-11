@@ -8,9 +8,14 @@ from app.models.user import User
 from app.models.post import Post
 from app.schemas.analytics import PostStatisticCreate, PostStatisticResponse
 from app.services.facebook_service import FacebookGraphService
+from app.services.tiktok_service import TikTokApiService
 from app.services.analytics_service import AnalyticsService
 
-router = APIRouter(prefix="/social", tags=["Social Media Integration (Facebook & Instagram)"])
+router = APIRouter(prefix="/social", tags=["Social Media Integration (Facebook, Instagram & TikTok)"])
+
+# ==============================================================================
+# FACEBOOK & INSTAGRAM GRAPH API INTEGRATION ENDPOINTS
+# ==============================================================================
 
 @router.get(
     "/facebook/login-url",
@@ -113,6 +118,77 @@ def sync_instagram_post_statistics(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Không thể lấy dữ liệu từ Instagram: {metrics.get('error', 'Unknown error')}"
+        )
+
+    stat_in = PostStatisticCreate(
+        reach_count=metrics["reach_count"],
+        view_count=metrics["view_count"],
+        like_count=metrics["like_count"],
+        comment_count=metrics["comment_count"],
+        share_count=metrics["share_count"],
+        source_type="API"
+    )
+    return AnalyticsService.record_statistics(db, post_id, stat_in, current_user)
+
+# ==============================================================================
+# TIKTOK OPEN API V2 INTEGRATION ENDPOINTS
+# ==============================================================================
+
+@router.get(
+    "/tiktok/login-url",
+    summary="Lấy URL đăng nhập TikTok OAuth 2.0 (Login Kit v2)",
+    description="Tạo đường dẫn xác thực với TikTok for Developers để cấp quyền đọc video và phân tích chỉ số."
+)
+def get_tiktok_login_url(
+    redirect_uri: str = Query("http://localhost:3000/oauth/tiktok/callback", description="Địa chỉ callback của Frontend"),
+    current_user: User = Depends(get_current_user)
+):
+    url = TikTokApiService.get_authorization_url(redirect_uri=redirect_uri, state=str(current_user.user_id))
+    return {
+        "oauth_url": url,
+        "redirect_uri": redirect_uri
+    }
+
+@router.post(
+    "/tiktok/exchange-token",
+    summary="Đổi mã Code lấy TikTok Access Token & Refresh Token",
+    description="Nhận authorization code từ frontend sau khi người dùng đăng nhập TikTok thành công và đổi lấy Token."
+)
+def exchange_tiktok_code(
+    code: str = Body(..., embed=True),
+    redirect_uri: str = Body("http://localhost:3000/oauth/tiktok/callback", embed=True),
+    current_user: User = Depends(get_current_user)
+):
+    token_data = TikTokApiService.exchange_code_for_token(code, redirect_uri)
+    if not token_data.get("success"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Lỗi xác thực với TikTok: {token_data.get('error', 'Unknown error')}"
+        )
+    return token_data
+
+@router.post(
+    "/posts/{post_id}/sync-tiktok",
+    response_model=PostStatisticResponse,
+    summary="Tự động đồng bộ số liệu video từ TikTok Open API (FR-14 & BR-08)",
+    description="Gọi trực tiếp TikTok API v2 để lấy Lượt xem, Thích, Bình luận, Chia sẻ và lưu vào CSDL với source_type='API'."
+)
+def sync_tiktok_video_statistics(
+    post_id: int,
+    video_id: str = Body(..., embed=True, description="ID của Video trên kênh TikTok"),
+    access_token: str = Body(..., embed=True, description="User Access Token của tài khoản TikTok liên kết"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    post = db.query(Post).filter(Post.post_id == post_id, Post.deleted_at.is_(None)).first()
+    if not post:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy bài viết")
+
+    metrics = TikTokApiService.get_video_insights(video_id, access_token)
+    if not metrics.get("success"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Không thể lấy dữ liệu từ TikTok: {metrics.get('error', 'Unknown error')}"
         )
 
     stat_in = PostStatisticCreate(

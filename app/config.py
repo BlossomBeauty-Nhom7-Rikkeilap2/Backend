@@ -41,6 +41,16 @@ class Settings(BaseSettings):
     FACEBOOK_GRAPH_VERSION: str = "v19.0"
     TIKTOK_APP_ID: str = ""
     TIKTOK_APP_SECRET: str = ""
+    TIKTOK_CLIENT_KEY: str = ""
+    TIKTOK_CLIENT_SECRET: str = ""
+
+    @property
+    def tiktok_key(self) -> str:
+        return self.TIKTOK_CLIENT_KEY or self.TIKTOK_APP_ID
+
+    @property
+    def tiktok_secret(self) -> str:
+        return self.TIKTOK_CLIENT_SECRET or self.TIKTOK_APP_SECRET
 
     # Scheduler & CORS
     SCHEDULER_INTERVAL_SECONDS: int = 60
