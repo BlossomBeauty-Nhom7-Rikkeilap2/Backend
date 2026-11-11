@@ -23,7 +23,7 @@ router = APIRouter(prefix="/social", tags=["Social Media Integration (Facebook, 
     description="Tạo đường dẫn xác thực với Meta/Facebook để cấp quyền quản lý Fanpage và tài khoản Instagram Business."
 )
 def get_facebook_login_url(
-    redirect_uri: str = Query("http://localhost:3000/oauth/facebook/callback", description="Địa chỉ callback của Frontend"),
+    redirect_uri: str = Query("http://localhost:5500/oauth/facebook/callback", description="Địa chỉ callback của Frontend"),
     current_user: User = Depends(get_current_user)
 ):
     url = FacebookGraphService.get_authorization_url(redirect_uri=redirect_uri, state=str(current_user.user_id))
@@ -39,7 +39,7 @@ def get_facebook_login_url(
 )
 def exchange_facebook_code(
     code: str = Body(..., embed=True),
-    redirect_uri: str = Body("http://localhost:3000/oauth/facebook/callback", embed=True),
+    redirect_uri: str = Body("http://localhost:5500/oauth/facebook/callback", embed=True),
     current_user: User = Depends(get_current_user)
 ):
     token_data = FacebookGraphService.exchange_code_for_token(code, redirect_uri)
@@ -140,7 +140,7 @@ def sync_instagram_post_statistics(
     description="Tạo đường dẫn xác thực với TikTok for Developers để cấp quyền đọc video và phân tích chỉ số."
 )
 def get_tiktok_login_url(
-    redirect_uri: str = Query("http://localhost:3000/oauth/tiktok/callback", description="Địa chỉ callback của Frontend"),
+    redirect_uri: str = Query("http://localhost:5500/oauth/tiktok/callback", description="Địa chỉ callback của Frontend"),
     current_user: User = Depends(get_current_user)
 ):
     url = TikTokApiService.get_authorization_url(redirect_uri=redirect_uri, state=str(current_user.user_id))
@@ -156,7 +156,7 @@ def get_tiktok_login_url(
 )
 def exchange_tiktok_code(
     code: str = Body(..., embed=True),
-    redirect_uri: str = Body("http://localhost:3000/oauth/tiktok/callback", embed=True),
+    redirect_uri: str = Body("http://localhost:5500/oauth/tiktok/callback", embed=True),
     current_user: User = Depends(get_current_user)
 ):
     token_data = TikTokApiService.exchange_code_for_token(code, redirect_uri)
