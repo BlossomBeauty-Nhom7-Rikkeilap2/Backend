@@ -6,7 +6,7 @@ from app.core.database import Base
 class PostStatistic(Base):
     __tablename__ = "post_statistics"
 
-    stat_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    stat_id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     post_id = Column(BigInteger, ForeignKey("posts.post_id"), nullable=False, index=True)
     reach_count = Column(Integer, default=0, nullable=False)
     view_count = Column(Integer, default=0, nullable=False)

@@ -6,7 +6,7 @@ from app.core.database import Base
 class Notification(Base):
     __tablename__ = "notifications"
 
-    notification_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    notification_id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     recipient_id = Column(Integer, ForeignKey("users.user_id"), nullable=False, index=True)
     post_id = Column(BigInteger, ForeignKey("posts.post_id"), nullable=True)
     notification_type = Column(

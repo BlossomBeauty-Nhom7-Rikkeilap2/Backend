@@ -6,7 +6,7 @@ from app.core.database import Base
 class Post(Base):
     __tablename__ = "posts"
 
-    post_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    post_id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     title = Column(String(255), nullable=False)
     caption = Column(Text, nullable=True)
     hashtags = Column(String(1000), nullable=True)

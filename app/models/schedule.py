@@ -6,7 +6,7 @@ from app.core.database import Base
 class Schedule(Base):
     __tablename__ = "schedules"
 
-    schedule_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    schedule_id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     post_id = Column(BigInteger, ForeignKey("posts.post_id"), unique=True, nullable=False, index=True)
     scheduled_time = Column(DateTime, nullable=False, index=True)
     remind_before_minutes = Column(Integer, default=30, nullable=False)

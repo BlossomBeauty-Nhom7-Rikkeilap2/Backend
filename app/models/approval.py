@@ -6,7 +6,7 @@ from app.core.database import Base
 class Approval(Base):
     __tablename__ = "approvals"
 
-    approval_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    approval_id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     post_id = Column(BigInteger, ForeignKey("posts.post_id"), nullable=False, index=True)
     actor_id = Column(Integer, ForeignKey("users.user_id"), nullable=False)
     action = Column(
