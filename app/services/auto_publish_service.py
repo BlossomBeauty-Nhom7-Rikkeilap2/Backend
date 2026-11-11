@@ -71,17 +71,33 @@ class AutoPublishService:
                         image_url=media_url
                     )
                     api_response = fb_res
+                    if "error" in fb_res:
+                        error_detail = fb_res["error"].get("message", "Lỗi từ Facebook API")
+                        logger.error(f"Facebook Graph API trả về lỗi: {error_detail}")
+                        return {
+                            "success": False,
+                            "error": f"Lỗi Facebook API: {error_detail}"
+                        }
+
                     fb_post_id = fb_res.get("id") or fb_res.get("post_id")
                     if fb_post_id:
                         published_url = f"https://www.facebook.com/{fb_post_id}"
                     else:
-                        logger.warning(f"Facebook Graph API trả về kết quả không có ID: {fb_res}")
                         published_url = f"https://www.facebook.com/{page_id}/posts/{post.post_id}"
                 except Exception as e:
-                    logger.error(f"Lỗi khi gọi Facebook API: {e}")
-                    published_url = f"https://www.facebook.com/blossombeautystore/posts/auto_{post.post_id}_{int(now.timestamp())}"
+                    logger.error(f"Lỗi kết nối Facebook API: {e}")
+                    return {
+                        "success": False,
+                        "error": f"Lỗi kết nối mạng khi gọi Facebook API: {str(e)}"
+                    }
             else:
-                published_url = f"https://www.facebook.com/blossombeautystore/posts/auto_{post.post_id}_{int(now.timestamp())}"
+                # Chưa cấu hình Token Fanpage thật
+                err_msg = "Chưa cấu hình FB_PAGE_ID hoặc FB_PAGE_ACCESS_TOKEN trong file .env để đăng bài lên Fanpage thật!"
+                logger.warning(err_msg)
+                return {
+                    "success": False,
+                    "error": err_msg
+                }
 
         # 2. INSTAGRAM
         elif "INSTAGRAM" in platform_code:
