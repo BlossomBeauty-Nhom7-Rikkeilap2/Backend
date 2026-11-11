@@ -6,6 +6,7 @@ from app.models.post import Post
 from app.models.notification import Notification
 from app.models.user import User
 from app.core.websocket import manager as ws_manager
+from app.services.auto_publish_service import AutoPublishService
 from app.config import settings
 
 async def system_timer_worker():
@@ -60,7 +61,7 @@ async def system_timer_worker():
                         post_id=post.post_id,
                         notification_type="SCHEDULE_REMINDER",
                         title="Nhắc lịch đăng bài khẩn (còn 10 phút)",
-                        message=f"Chỉ còn 10 phút đến giờ đăng bài '{post.title}'. Vui lòng chuẩn bị đăng lên mạng xã hội!"
+                        message=f"Chỉ còn 10 phút đến giờ hệ thống tự động xuất bản bài viết '{post.title}'!"
                     )
                     db.add(notif)
                     await ws_manager.send_to_user(post.author_id, {
@@ -70,33 +71,9 @@ async def system_timer_worker():
                         "minutes_left": 10
                     })
 
-                # 3. Cảnh báo quá hạn đăng (OVERDUE_ALERT)
-                if diff_seconds < 0 and not sched.is_overdue_alerted:
-                    sched.is_overdue_alerted = True
-                    # Gửi cho tác giả
-                    db.add(Notification(
-                        recipient_id=post.author_id,
-                        post_id=post.post_id,
-                        notification_type="OVERDUE_ALERT",
-                        title="CẢNH BÁO: Quá hạn đăng bài!",
-                        message=f"Bài viết '{post.title}' đã quá giờ đăng ({sched.scheduled_time.strftime('%H:%M %d/%m/%Y')}) nhưng chưa được xác nhận đăng."
-                    ))
-                    # Gửi cho toàn bộ Marketing Manager
-                    managers = db.query(User).join(User.role).filter(User.role.has(role_code="MANAGER")).all()
-                    for mgr in managers:
-                        db.add(Notification(
-                            recipient_id=mgr.user_id,
-                            post_id=post.post_id,
-                            notification_type="OVERDUE_ALERT",
-                            title="Báo cáo quá hạn đăng bài của nhân viên",
-                            message=f"Bài viết '{post.title}' của nhân viên đã quá giờ đăng."
-                        ))
-
-                    await ws_manager.broadcast_to_role("MANAGER", {
-                        "type": "OVERDUE_ALERT",
-                        "post_id": post.post_id,
-                        "title": post.title
-                    })
+                # 3. ĐẾN GIỜ ĐĂNG BÀI: TỰ ĐỘNG XUẤT BẢN 100% QUA API
+                if diff_seconds <= 0:
+                    await AutoPublishService.execute_auto_publish(db, post, sched, now)
 
             db.commit()
             db.close()

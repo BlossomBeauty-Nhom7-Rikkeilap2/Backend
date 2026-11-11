@@ -1,5 +1,5 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, UploadFile, File, Query, status
+from fastapi import APIRouter, Depends, UploadFile, File, Query, status, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -107,3 +107,22 @@ async def upload_media(
         "media_type": media_type,
         "filename": file.filename
     }
+
+@router.post(
+    "/{post_id}/auto-publish",
+    summary="Tự động xuất bản bài viết ngay lập tức qua API (100% tự động)",
+    description="Gọi trực tiếp API Facebook/Instagram để đăng bài tự động, chuyển trạng thái sang PUBLISHED."
+)
+async def auto_publish_post(
+    post_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    from app.services.auto_publish_service import AutoPublishService
+    result = await AutoPublishService.publish_post_now(db, post_id, current_user)
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=result.get("error", "Không thể tự động xuất bản")
+        )
+    return result

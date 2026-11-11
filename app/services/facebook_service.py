@@ -100,17 +100,26 @@ class FacebookGraphService:
         page_id: str,
         page_access_token: str,
         message: str,
+        image_url: Optional[str] = None,
         link: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Đăng bài viết mới lên Facebook Fanpage."""
-        url = f"{cls.GRAPH_API_BASE}/{cls.get_version()}/{page_id}/feed"
-        payload = {
-            "message": message,
-            "access_token": page_access_token
-        }
-        if link:
-            payload["link"] = link
-        res = requests.post(url, data=payload, timeout=10)
+        """Đăng bài viết mới lên Facebook Fanpage (hỗ trợ cả ảnh và văn bản)."""
+        if image_url:
+            url = f"{cls.GRAPH_API_BASE}/{cls.get_version()}/{page_id}/photos"
+            payload = {
+                "caption": message,
+                "url": image_url,
+                "access_token": page_access_token
+            }
+        else:
+            url = f"{cls.GRAPH_API_BASE}/{cls.get_version()}/{page_id}/feed"
+            payload = {
+                "message": message,
+                "access_token": page_access_token
+            }
+            if link:
+                payload["link"] = link
+        res = requests.post(url, data=payload, timeout=15)
         return res.json()
 
     @classmethod
