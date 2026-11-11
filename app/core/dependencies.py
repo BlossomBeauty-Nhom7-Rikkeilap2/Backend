@@ -52,8 +52,13 @@ def get_current_user(
     if not payload:
         raise credentials_exception
 
-    user_id: Optional[int] = payload.get("sub")
-    if user_id is None:
+    sub = payload.get("sub")
+    if sub is None:
+        raise credentials_exception
+
+    try:
+        user_id = int(sub)
+    except (ValueError, TypeError):
         raise credentials_exception
 
     user = db.query(User).filter(User.user_id == user_id).first()

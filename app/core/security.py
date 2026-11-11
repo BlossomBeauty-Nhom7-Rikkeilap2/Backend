@@ -26,6 +26,10 @@ def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta]
     Sinh JWT Token với payload và thời gian hết hạn (theo FR-01 SDD: 60 phút).
     """
     to_encode = data.copy()
+    # RFC 7519: sub (Subject) claim bắt buộc phải là dạng chuỗi (string)
+    if "sub" in to_encode:
+        to_encode["sub"] = str(to_encode["sub"])
+
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
     else:

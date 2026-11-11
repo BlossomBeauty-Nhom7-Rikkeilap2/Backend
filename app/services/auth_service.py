@@ -73,7 +73,7 @@ class AuthService:
 
         # Sinh JWT Token
         token_payload = {
-            "sub": user.user_id,
+            "sub": str(user.user_id),
             "username": user.username,
             "role": role_code
         }
