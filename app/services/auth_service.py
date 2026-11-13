@@ -12,11 +12,12 @@ from app.config import settings
 class AuthService:
     @staticmethod
     def login(db: Session, login_data: LoginRequest) -> TokenResponse:
-        # 1. Tìm user theo email hoặc username (SDD 3.2.1)
+        # 1. Tìm user theo email hoặc username (SDD 3.2.1) - đảm bảo cắt khoảng trắng 2 đầu
+        identifier = login_data.username_or_email.strip() if login_data.username_or_email else ""
         user = db.query(User).filter(
             or_(
-                User.username == login_data.username_or_email,
-                User.email == login_data.username_or_email
+                User.username == identifier,
+                User.email == identifier
             )
         ).first()
 

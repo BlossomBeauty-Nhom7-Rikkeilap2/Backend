@@ -1,9 +1,16 @@
 from typing import Optional
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 
 class LoginRequest(BaseModel):
     username_or_email: str
     password: str
+
+    @field_validator("username_or_email", mode="before")
+    @classmethod
+    def strip_username_or_email(cls, v: str) -> str:
+        if isinstance(v, str):
+            return v.strip()
+        return v
 
 class UserInfoResponse(BaseModel):
     user_id: int
