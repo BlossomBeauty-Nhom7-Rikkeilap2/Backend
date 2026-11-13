@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from datetime import datetime
@@ -10,6 +11,7 @@ from app.models.notification import Notification
 from app.models.user import User
 from app.models.platform import Platform
 from app.services.facebook_service import FacebookGraphService
+from app.services.tiktok_service import TikTokApiService
 from app.core.websocket import manager as ws_manager
 from app.config import settings
 
@@ -27,7 +29,12 @@ class AutoPublishService:
             return {"success": False, "error": f"Chỉ có thể tự động đăng bài viết đã duyệt (APPROVED) hoặc đã lên lịch (SCHEDULED). Trạng thái hiện tại: {post.status}"}
 
         sched = db.query(Schedule).filter(Schedule.post_id == post_id).first()
-        return await AutoPublishService.execute_auto_publish(db, post, sched, datetime.now())
+        res = await AutoPublishService.execute_auto_publish(db, post, sched, datetime.now())
+        if not res.get("success"):
+            post.error_message = res.get("error")
+            post.status = "FAILED"
+            db.commit()
+        return res
 
     @staticmethod
     async def execute_auto_publish(db: Session, post: Post, sched: Optional[Schedule], now: datetime) -> Dict[str, Any]:
@@ -41,15 +48,30 @@ class AutoPublishService:
             caption += f"\n\n{post.hashtags}"
 
         media_url = None
+        media_list = []
         if post.media_files:
             try:
                 files = json.loads(post.media_files) if isinstance(post.media_files, str) else post.media_files
-                if isinstance(files, list) and len(files) > 0 and files[0]:
-                    media_url = files[0]
+                if isinstance(files, list):
+                    media_list = [f for f in files if f]
+                    if len(media_list) > 0:
+                        media_url = media_list[0]
+                elif isinstance(files, str) and files:
+                    media_url = files
+                    media_list = [files]
             except Exception:
                 media_url = None
+                media_list = []
+
+        # Chuẩn hóa media_url thành public URL nếu đang là đường dẫn cục bộ /uploads/
+        public_base = "https://backend-facj.onrender.com"
+        if media_url and media_url.startswith("/"):
+            media_url = f"{public_base}{media_url}"
+        if media_list:
+            media_list = [f"{public_base}{m}" if m.startswith("/") else m for m in media_list]
 
         published_url = None
+        external_post_id = None
         api_response = {}
 
         # 1. FACEBOOK FANPAGE
@@ -61,76 +83,147 @@ class AutoPublishService:
                 page_id = platform.oauth_config.get("page_id") or page_id
                 access_token = platform.oauth_config.get("page_access_token") or access_token
 
-            if page_id and access_token:
-                logger.info(f"Đang gọi Facebook Graph API tự động xuất bản bài #{post.post_id} lên Fanpage {page_id}...")
-                try:
-                    fb_res = FacebookGraphService.publish_post_to_facebook(
+            if not page_id or not access_token:
+                err_msg = "Chưa cấu hình FB_PAGE_ID hoặc FB_PAGE_ACCESS_TOKEN để xuất bản bài viết lên Facebook!"
+                logger.warning(err_msg)
+                return {"success": False, "error": err_msg}
+
+            logger.info(f"Đang gọi Facebook Graph API tự động xuất bản bài #{post.post_id} lên Fanpage {page_id}...")
+            try:
+                if post.media_type == "VIDEO" and media_url:
+                    fb_res = await asyncio.to_thread(
+                        FacebookGraphService.publish_video_to_facebook,
+                        page_id=page_id,
+                        page_access_token=access_token,
+                        video_url=media_url,
+                        description=caption,
+                        title=post.title
+                    )
+                elif len(media_list) > 1:
+                    fb_res = await asyncio.to_thread(
+                        FacebookGraphService.publish_album_to_facebook,
+                        page_id=page_id,
+                        page_access_token=access_token,
+                        message=caption,
+                        image_urls=media_list
+                    )
+                else:
+                    fb_res = await asyncio.to_thread(
+                        FacebookGraphService.publish_post_to_facebook,
                         page_id=page_id,
                         page_access_token=access_token,
                         message=caption,
                         image_url=media_url
                     )
-                    api_response = fb_res
-                    if "error" in fb_res:
-                        error_detail = fb_res["error"].get("message", "Lỗi từ Facebook API")
-                        logger.error(f"Facebook Graph API trả về lỗi: {error_detail}")
-                        return {
-                            "success": False,
-                            "error": f"Lỗi Facebook API: {error_detail}"
-                        }
 
-                    fb_post_id = fb_res.get("id") or fb_res.get("post_id")
-                    if fb_post_id:
-                        published_url = f"https://www.facebook.com/{fb_post_id}"
-                    else:
-                        published_url = f"https://www.facebook.com/{page_id}/posts/{post.post_id}"
-                except Exception as e:
-                    logger.error(f"Lỗi kết nối Facebook API: {e}")
-                    return {
-                        "success": False,
-                        "error": f"Lỗi kết nối mạng khi gọi Facebook API: {str(e)}"
-                    }
-            else:
-                # Chưa cấu hình Token Fanpage thật
-                err_msg = "Chưa cấu hình FB_PAGE_ID hoặc FB_PAGE_ACCESS_TOKEN trong file .env để đăng bài lên Fanpage thật!"
-                logger.warning(err_msg)
-                return {
-                    "success": False,
-                    "error": err_msg
-                }
+                api_response = fb_res
+                if "error" in fb_res:
+                    error_detail = fb_res["error"].get("message", "Lỗi từ Facebook API")
+                    logger.error(f"Facebook Graph API trả về lỗi: {error_detail}")
+                    return {"success": False, "error": f"Lỗi Facebook API: {error_detail}"}
+
+                external_post_id = fb_res.get("id") or fb_res.get("post_id")
+                if external_post_id:
+                    published_url = f"https://www.facebook.com/{external_post_id}"
+                else:
+                    published_url = f"https://www.facebook.com/{page_id}/posts/{post.post_id}"
+            except Exception as e:
+                logger.error(f"Lỗi kết nối Facebook API: {e}")
+                return {"success": False, "error": f"Lỗi kết nối mạng khi gọi Facebook API: {str(e)}"}
 
         # 2. INSTAGRAM
         elif "INSTAGRAM" in platform_code:
             ig_id = settings.IG_ACCOUNT_ID
             ig_token = settings.IG_ACCESS_TOKEN
-            if ig_id and ig_token and media_url:
-                try:
-                    ig_res = FacebookGraphService.publish_photo_to_instagram(
+
+            if platform and platform.oauth_config and isinstance(platform.oauth_config, dict):
+                ig_id = platform.oauth_config.get("ig_account_id") or platform.oauth_config.get("account_id") or ig_id
+                ig_token = platform.oauth_config.get("access_token") or ig_token
+
+            if not ig_id or not ig_token:
+                err_msg = "Chưa cấu hình IG_ACCOUNT_ID hoặc IG_ACCESS_TOKEN để xuất bản lên Instagram!"
+                logger.warning(err_msg)
+                return {"success": False, "error": err_msg}
+
+            if not media_url:
+                return {"success": False, "error": "Instagram bắt buộc phải có ít nhất 1 hình ảnh hoặc video để xuất bản!"}
+
+            logger.info(f"Đang gọi Instagram Graph API xuất bản bài #{post.post_id} lên Instagram {ig_id}...")
+            try:
+                if post.media_type == "VIDEO":
+                    ig_res = await asyncio.to_thread(
+                        FacebookGraphService.publish_reel_to_instagram,
+                        ig_user_id=ig_id,
+                        access_token=ig_token,
+                        video_url=media_url,
+                        caption=caption
+                    )
+                else:
+                    ig_res = await asyncio.to_thread(
+                        FacebookGraphService.publish_photo_to_instagram,
                         ig_user_id=ig_id,
                         access_token=ig_token,
                         image_url=media_url,
                         caption=caption
                     )
-                    api_response = ig_res
-                    published_url = f"https://www.instagram.com/p/auto_{post.post_id}/"
-                except Exception as e:
-                    logger.error(f"Lỗi khi gọi Instagram API: {e}")
-                    published_url = f"https://www.instagram.com/p/blossom_{post.post_id}_{int(now.timestamp())}/"
-            else:
-                published_url = f"https://www.instagram.com/p/blossom_{post.post_id}_{int(now.timestamp())}/"
 
-        # 3. TIKTOK & OTHER
+                api_response = ig_res
+                if not ig_res.get("success"):
+                    return {"success": False, "error": f"Lỗi Instagram API: {ig_res.get('error')}"}
+
+                external_post_id = str(ig_res.get("ig_media_id"))
+                published_url = ig_res.get("permalink") or f"https://www.instagram.com/p/{external_post_id}/"
+            except Exception as e:
+                logger.error(f"Lỗi khi gọi Instagram API: {e}")
+                return {"success": False, "error": f"Lỗi kết nối khi gọi Instagram API: {str(e)}"}
+
+        # 3. TIKTOK
+        elif "TIKTOK" in platform_code:
+            tiktok_token = None
+            if platform and platform.oauth_config and isinstance(platform.oauth_config, dict):
+                tiktok_token = platform.oauth_config.get("access_token")
+
+            if not tiktok_token:
+                err_msg = "Chưa kết nối tài khoản TikTok qua OAuth (hoặc chưa có Access Token) để xuất bản bài viết!"
+                logger.warning(err_msg)
+                return {"success": False, "error": err_msg}
+
+            if not media_url or post.media_type != "VIDEO":
+                return {"success": False, "error": "TikTok Direct Post API yêu cầu tệp video hợp lệ để xuất bản!"}
+
+            logger.info(f"Đang gọi TikTok Direct Post API v2 xuất bản bài #{post.post_id}...")
+            try:
+                tt_res = await asyncio.to_thread(
+                    TikTokApiService.publish_video_to_tiktok,
+                    access_token=tiktok_token,
+                    video_url=media_url,
+                    title=caption
+                )
+                api_response = tt_res
+                if not tt_res.get("success"):
+                    return {"success": False, "error": f"Lỗi TikTok API: {tt_res.get('error')}"}
+
+                external_post_id = str(tt_res.get("video_id") or tt_res.get("publish_id"))
+                published_url = tt_res.get("published_url") or "https://www.tiktok.com"
+            except Exception as e:
+                logger.error(f"Lỗi khi gọi TikTok API: {e}")
+                return {"success": False, "error": f"Lỗi kết nối khi gọi TikTok API: {str(e)}"}
+
         else:
-            published_url = f"https://www.tiktok.com/@blossombeautystore/video/{post.post_id}{int(now.timestamp())}"
+            return {"success": False, "error": f"Nền tảng '{platform_code}' chưa được hỗ trợ xuất bản tự động."}
 
         # CẬP NHẬT TRẠNG THÁI POST VÀ SCHEDULE
         post.status = "PUBLISHED"
         post.published_at = now
         post.published_url = published_url
+        post.external_post_id = external_post_id
+        post.error_message = None
+        post.retry_count = 0
         post.updated_at = now
 
         if sched:
             sched.schedule_status = "COMPLETED"
+            sched.retry_count = 0
 
         # GỬI THÔNG BÁO CHO TÁC GIẢ VÀ QUẢN LÝ
         notif_msg = f"Bài viết '{post.title}' đã được hệ thống tự động xuất bản 100% lên {platform_name} vào lúc {now.strftime('%H:%M %d/%m/%Y')}!"
@@ -163,7 +256,8 @@ class AutoPublishService:
                 "post_id": post.post_id,
                 "title": post.title,
                 "platform": platform_name,
-                "published_url": published_url
+                "published_url": published_url,
+                "external_post_id": external_post_id
             }
             await ws_manager.send_to_user(post.author_id, ws_payload)
             await ws_manager.broadcast_to_role("MANAGER", ws_payload)
@@ -173,6 +267,7 @@ class AutoPublishService:
         return {
             "success": True,
             "post_id": post.post_id,
+            "external_post_id": external_post_id,
             "status": "PUBLISHED",
             "published_url": published_url,
             "api_response": api_response

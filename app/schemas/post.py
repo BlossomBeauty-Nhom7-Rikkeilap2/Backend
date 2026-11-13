@@ -34,6 +34,9 @@ class PostResponse(BaseModel):
     total_media_size_bytes: int
     planned_publish_time: Optional[datetime] = None
     status: str
+    external_post_id: Optional[str] = None
+    error_message: Optional[str] = None
+    retry_count: Optional[int] = 0
     published_url: Optional[str] = None
     published_at: Optional[datetime] = None
     created_at: datetime

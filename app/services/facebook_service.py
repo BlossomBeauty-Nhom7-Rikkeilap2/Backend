@@ -1,7 +1,12 @@
+import time
+import json
+import logging
 from typing import Dict, Any, List, Optional
 import requests
 from urllib.parse import urlencode
 from app.config import settings
+
+logger = logging.getLogger("FacebookGraphService")
 
 class FacebookGraphService:
     """
@@ -123,6 +128,83 @@ class FacebookGraphService:
         return res.json()
 
     @classmethod
+    def publish_video_to_facebook(
+        cls,
+        page_id: str,
+        page_access_token: str,
+        video_url: str,
+        description: str,
+        title: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Đăng video lên Facebook Fanpage qua endpoint /{page_id}/videos.
+        """
+        url = f"{cls.GRAPH_API_BASE}/{cls.get_version()}/{page_id}/videos"
+        payload = {
+            "file_url": video_url,
+            "description": description,
+            "access_token": page_access_token
+        }
+        if title:
+            payload["title"] = title
+        try:
+            res = requests.post(url, data=payload, timeout=60)
+            return res.json()
+        except Exception as e:
+            return {"error": {"message": f"Lỗi kết nối khi đăng video lên Facebook: {str(e)}"}}
+
+    @classmethod
+    def publish_album_to_facebook(
+        cls,
+        page_id: str,
+        page_access_token: str,
+        message: str,
+        image_urls: List[str]
+    ) -> Dict[str, Any]:
+        """
+        Đăng album nhiều ảnh lên Facebook Fanpage:
+        1. Gọi /{page_id}/photos với từng ảnh kèm published=false để lấy danh sách photo_id.
+        2. Gọi /{page_id}/feed với attached_media=[{"media_fbid": id}, ...] và message.
+        """
+        if not image_urls:
+            return cls.publish_post_to_facebook(page_id, page_access_token, message)
+        if len(image_urls) == 1:
+            return cls.publish_post_to_facebook(page_id, page_access_token, message, image_url=image_urls[0])
+
+        attached_media = []
+        for img_url in image_urls:
+            try:
+                photo_url = f"{cls.GRAPH_API_BASE}/{cls.get_version()}/{page_id}/photos"
+                photo_payload = {
+                    "url": img_url,
+                    "published": "false",
+                    "access_token": page_access_token
+                }
+                res = requests.post(photo_url, data=photo_payload, timeout=30)
+                data = res.json()
+                if "id" in data:
+                    attached_media.append({"media_fbid": str(data["id"])})
+                else:
+                    logger.warning(f"Không thể upload ảnh con cho album Facebook: {data.get('error')}")
+            except Exception as ex:
+                logger.warning(f"Lỗi khi upload ảnh con cho album Facebook: {ex}")
+
+        if not attached_media:
+            return cls.publish_post_to_facebook(page_id, page_access_token, message, image_url=image_urls[0])
+
+        feed_url = f"{cls.GRAPH_API_BASE}/{cls.get_version()}/{page_id}/feed"
+        feed_payload = {
+            "message": message,
+            "attached_media": json.dumps(attached_media),
+            "access_token": page_access_token
+        }
+        try:
+            feed_res = requests.post(feed_url, data=feed_payload, timeout=30)
+            return feed_res.json()
+        except Exception as e:
+            return {"error": {"message": f"Lỗi khi đăng album Facebook: {str(e)}"}}
+
+    @classmethod
     def get_facebook_post_insights(cls, fb_post_id: str, access_token: str) -> Dict[str, Any]:
         """Lấy số liệu thống kê (Insights) bài viết Facebook."""
         url = f"{cls.GRAPH_API_BASE}/{cls.get_version()}/{fb_post_id}"
@@ -220,7 +302,105 @@ class FacebookGraphService:
         if "id" not in pub_data:
             return {"success": False, "error": pub_data.get("error", "Publish failed")}
 
-        return {"success": True, "ig_media_id": pub_data["id"]}
+        ig_media_id = pub_data["id"]
+        permalink = None
+        try:
+            detail_res = requests.get(
+                f"{cls.GRAPH_API_BASE}/{cls.get_version()}/{ig_media_id}",
+                params={"fields": "permalink", "access_token": access_token},
+                timeout=10
+            )
+            permalink = detail_res.json().get("permalink")
+        except Exception:
+            pass
+
+        return {
+            "success": True,
+            "ig_media_id": ig_media_id,
+            "permalink": permalink or f"https://www.instagram.com/p/{ig_media_id}/"
+        }
+
+    @classmethod
+    def publish_reel_to_instagram(
+        cls,
+        ig_user_id: str,
+        access_token: str,
+        video_url: str,
+        caption: str
+    ) -> Dict[str, Any]:
+        """
+        Đăng Reels/Video lên Instagram Business Account:
+        Bước 1: Tạo media container với media_type='REELS'
+        Bước 2: Polling container status (chờ trạng thái 'FINISHED')
+        Bước 3: Phát hành (media_publish) và lấy permalink thật
+        """
+        create_url = f"{cls.GRAPH_API_BASE}/{cls.get_version()}/{ig_user_id}/media"
+        create_payload = {
+            "media_type": "REELS",
+            "video_url": video_url,
+            "caption": caption,
+            "access_token": access_token
+        }
+        create_res = requests.post(create_url, data=create_payload, timeout=20)
+        create_data = create_res.json()
+        if "id" not in create_data:
+            return {"success": False, "error": create_data.get("error", "Tạo Reel container thất bại")}
+
+        creation_id = create_data["id"]
+
+        # Polling container status (chờ tối đa 60 giây, mỗi lần 5 giây)
+        attempts = 0
+        ready = False
+        while attempts < 12:
+            time.sleep(5)
+            attempts += 1
+            try:
+                status_res = requests.get(
+                    f"{cls.GRAPH_API_BASE}/{cls.get_version()}/{creation_id}",
+                    params={"fields": "status_code", "access_token": access_token},
+                    timeout=10
+                )
+                s_data = status_res.json()
+                code = s_data.get("status_code")
+                if code == "FINISHED":
+                    ready = True
+                    break
+                elif code == "ERROR":
+                    return {"success": False, "error": f"Instagram container báo lỗi khi xử lý video: {s_data}"}
+            except Exception as e:
+                logger.warning(f"Lỗi khi polling Reel container status: {e}")
+
+        if not ready:
+            return {"success": False, "error": "Quá thời gian chờ Instagram xử lý video (timeout sau 60s)"}
+
+        # Phát hành container
+        publish_url = f"{cls.GRAPH_API_BASE}/{cls.get_version()}/{ig_user_id}/media_publish"
+        publish_payload = {
+            "creation_id": creation_id,
+            "access_token": access_token
+        }
+        pub_res = requests.post(publish_url, data=publish_payload, timeout=20)
+        pub_data = pub_res.json()
+        if "id" not in pub_data:
+            return {"success": False, "error": pub_data.get("error", "Xuất bản Reel thất bại")}
+
+        ig_media_id = pub_data["id"]
+        permalink = None
+        try:
+            detail_res = requests.get(
+                f"{cls.GRAPH_API_BASE}/{cls.get_version()}/{ig_media_id}",
+                params={"fields": "permalink", "access_token": access_token},
+                timeout=10
+            )
+            permalink = detail_res.json().get("permalink")
+        except Exception:
+            pass
+
+        return {
+            "success": True,
+            "ig_media_id": ig_media_id,
+            "permalink": permalink or f"https://www.instagram.com/reel/{ig_media_id}/"
+        }
 
     @classmethod
     def get_instagram_media_insights(cls, ig_media_id: str, access_token: str) -> Dict[str, Any]:

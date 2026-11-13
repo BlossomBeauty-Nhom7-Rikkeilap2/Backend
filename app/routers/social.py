@@ -6,10 +6,12 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.models.user import User
 from app.models.post import Post
+from app.models.platform import Platform
 from app.schemas.analytics import PostStatisticCreate, PostStatisticResponse
 from app.services.facebook_service import FacebookGraphService
 from app.services.tiktok_service import TikTokApiService
 from app.services.analytics_service import AnalyticsService
+from app.config import settings
 
 router = APIRouter(prefix="/social", tags=["Social Media Integration (Facebook, Instagram & TikTok)"])
 
@@ -197,6 +199,134 @@ def sync_tiktok_video_statistics(
         like_count=metrics["like_count"],
         comment_count=metrics["comment_count"],
         share_count=metrics["share_count"],
+        source_type="API"
+    )
+    return AnalyticsService.record_statistics(db, post_id, stat_in, current_user)
+
+# ==============================================================================
+# TỰ ĐỘNG HÓA ĐỒNG BỘ CHỈ SỐ MẠNG XÃ HỘI (UNIFIED SYNC API)
+# ==============================================================================
+
+@router.post(
+    "/posts/{post_id}/sync",
+    response_model=PostStatisticResponse,
+    summary="Tự động đồng bộ số liệu mạng xã hội cho bài viết (Facebook, Instagram, TikTok)",
+    description="Tự động nhận diện nền tảng bài viết, sử dụng external_post_id và token đã cấu hình để đồng bộ chỉ số thật qua API."
+)
+def sync_post_statistics_auto(
+    post_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    post = db.query(Post).filter(Post.post_id == post_id, Post.deleted_at.is_(None)).first()
+    if not post:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy bài viết")
+
+    platform = db.query(Platform).filter(Platform.platform_id == post.platform_id).first()
+    platform_code = (platform.platform_code if platform else "FACEBOOK").upper()
+
+    external_id = post.external_post_id
+    if not external_id and post.published_url:
+        parts = [p for p in post.published_url.split('/') if p]
+        if parts:
+            external_id = parts[-1]
+
+    if not external_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Bài viết #{post_id} chưa có mã định danh bài đăng bên ngoài (external_post_id). Vui lòng xuất bản bài viết qua hệ thống trước khi đồng bộ."
+        )
+
+    # 1. FACEBOOK
+    if "FACEBOOK" in platform_code:
+        page_id = settings.FB_PAGE_ID
+        access_token = settings.FB_PAGE_ACCESS_TOKEN
+        if platform and platform.oauth_config and isinstance(platform.oauth_config, dict):
+            page_id = platform.oauth_config.get("page_id") or page_id
+            access_token = platform.oauth_config.get("page_access_token") or access_token
+
+        if not access_token:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Chưa cấu hình Facebook Page Access Token để đồng bộ chỉ số."
+            )
+
+        metrics = FacebookGraphService.get_facebook_post_insights(external_id, access_token)
+        if not metrics.get("success"):
+            err_msg = metrics.get("error", {})
+            err_detail = err_msg.get("message", "Lỗi Facebook Graph API") if isinstance(err_msg, dict) else str(err_msg)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Không thể lấy dữ liệu từ Facebook Graph API: {err_detail}"
+            )
+
+    # 2. INSTAGRAM
+    elif "INSTAGRAM" in platform_code:
+        access_token = settings.IG_ACCESS_TOKEN or settings.FB_PAGE_ACCESS_TOKEN
+        if platform and platform.oauth_config and isinstance(platform.oauth_config, dict):
+            access_token = platform.oauth_config.get("access_token") or access_token
+
+        if not access_token:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Chưa cấu hình Instagram Access Token để đồng bộ chỉ số."
+            )
+
+        metrics = FacebookGraphService.get_instagram_media_insights(external_id, access_token)
+        if not metrics.get("success"):
+            err_msg = metrics.get("error", {})
+            err_detail = err_msg.get("message", "Lỗi Instagram Graph API") if isinstance(err_msg, dict) else str(err_msg)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Không thể lấy dữ liệu từ Instagram Graph API: {err_detail}"
+            )
+
+    # 3. TIKTOK
+    elif "TIKTOK" in platform_code:
+        access_token = None
+        if platform and platform.oauth_config and isinstance(platform.oauth_config, dict):
+            access_token = platform.oauth_config.get("access_token")
+
+        if not access_token:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Chưa có TikTok Access Token (tài khoản TikTok chưa kết nối OAuth) để đồng bộ chỉ số."
+            )
+
+        # Nếu external_id là publish_id (bắt đầu bằng v_pub_), thử tra cứu status để lấy video_id thật
+        video_id = external_id
+        if external_id.startswith("v_pub_"):
+            try:
+                st_res = TikTokApiService.get_publish_status(external_id, access_token)
+                data_b = st_res.get("data", {})
+                p_ids = data_b.get("publicaly_available_post_id") or data_b.get("post_ids") or data_b.get("post_id")
+                if p_ids:
+                    resolved_id = str(p_ids[0]) if isinstance(p_ids, list) and len(p_ids) > 0 else str(p_ids)
+                    video_id = resolved_id
+                    post.external_post_id = resolved_id
+                    db.commit()
+            except Exception:
+                pass
+
+        metrics = TikTokApiService.get_video_insights(video_id, access_token)
+        if not metrics.get("success"):
+            err_msg = metrics.get("error", "Lỗi TikTok Open API")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Không thể lấy dữ liệu từ TikTok Open API: {err_msg}"
+            )
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Nền tảng '{platform_code}' không hỗ trợ đồng bộ chỉ số tự động."
+        )
+
+    stat_in = PostStatisticCreate(
+        reach_count=metrics.get("reach_count", 0),
+        view_count=metrics.get("view_count", 0),
+        like_count=metrics.get("like_count", 0),
+        comment_count=metrics.get("comment_count", 0),
+        share_count=metrics.get("share_count", 0),
         source_type="API"
     )
     return AnalyticsService.record_statistics(db, post_id, stat_in, current_user)

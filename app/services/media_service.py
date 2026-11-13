@@ -99,9 +99,7 @@ class MediaUploadService:
         with open(local_path, "wb") as f:
             f.write(contents)
 
-        if settings.R2_PUBLIC_URL and settings.R2_PUBLIC_URL.startswith("http"):
-            file_url = f"{settings.R2_PUBLIC_URL.rstrip('/')}/{unique_filename}"
-        else:
-            file_url = f"/uploads/{unique_filename}"
+        # Fallback lưu máy chủ cục bộ - TUYỆT ĐỐI không trả về settings.R2_PUBLIC_URL nếu file chưa đẩy lên R2
+        file_url = f"/uploads/{unique_filename}"
 
         return file_url, file_size, media_type

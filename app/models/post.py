@@ -16,8 +16,11 @@ class Post(Base):
     media_files = Column(JSON, nullable=True)  # Danh sách URL tệp trên Cloud R2 / Local
     total_media_size_bytes = Column(BigInteger, default=0, nullable=False)
     planned_publish_time = Column(DateTime, nullable=True)
+    external_post_id = Column(String(255), nullable=True)
+    error_message = Column(Text, nullable=True)
+    retry_count = Column(Integer, default=0, nullable=False)
     status = Column(
-        Enum("DRAFT", "PENDING_APPROVAL", "REVISION_REQUESTED", "REJECTED", "APPROVED", "SCHEDULED", "PUBLISHED"),
+        Enum("DRAFT", "PENDING_APPROVAL", "REVISION_REQUESTED", "REJECTED", "APPROVED", "SCHEDULED", "PUBLISHING", "PUBLISHED", "FAILED"),
         default="DRAFT",
         nullable=False,
         index=True
