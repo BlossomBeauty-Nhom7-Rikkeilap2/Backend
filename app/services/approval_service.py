@@ -14,7 +14,7 @@ from app.core.websocket import manager as ws_manager
 class ApprovalService:
     @staticmethod
     async def submit_post(db: Session, post_id: int, submit_in: ApprovalSubmit, current_user: User) -> Approval:
-        """Gửi duyệt bài viết (Staff) - SDD 3.2.4 & FR-08."""
+        """Gửi duyệt bài viết (Staff) - SDD 3.2.4 & FR-08 (Task T06A661)."""
         post = db.query(Post).filter(Post.post_id == post_id, Post.deleted_at.is_(None)).first()
         if not post:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy bài viết")
@@ -28,6 +28,39 @@ class ApprovalService:
                 detail=f"Không thể gửi duyệt bài viết đang ở trạng thái {post.status}"
             )
 
+        # Cập nhật thông tin nhanh nếu người dùng chỉnh sửa từ giao diện gửi duyệt
+        if submit_in.title is not None:
+            post.title = submit_in.title.strip()
+        if submit_in.caption is not None:
+            post.caption = submit_in.caption.strip()
+        if submit_in.planned_publish_time is not None:
+            post.planned_publish_time = submit_in.planned_publish_time
+
+        # Validate đủ trường bắt buộc theo FR-08
+        if not post.title:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="[ERR-03] Tiêu đề bài viết không được để trống khi gửi duyệt"
+            )
+        if not post.caption:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="[ERR-03] Nội dung bài viết (caption) không được để trống khi gửi duyệt"
+            )
+        if not post.platform_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="[ERR-03] Vui lòng chọn nền tảng xuất bản cho bài viết"
+            )
+
+        # Validate thời gian đăng ở tương lai theo FR-08
+        if post.planned_publish_time:
+            if post.planned_publish_time <= datetime.now():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="[ERR-02] Thời gian dự kiến đăng bài phải lớn hơn thời điểm hiện tại (nằm trong tương lai)"
+                )
+
         action = "RESUBMITTED" if post.status in ["REVISION_REQUESTED", "REJECTED"] else "SUBMITTED"
         post.status = "PENDING_APPROVAL"
 
@@ -35,7 +68,7 @@ class ApprovalService:
             post_id=post_id,
             actor_id=current_user.user_id,
             action=action,
-            comment=submit_in.comment
+            comment=submit_in.comment or ("Gửi duyệt bài viết mới." if action == "SUBMITTED" else "Đã chỉnh sửa theo yêu cầu và gửi duyệt lại.")
         )
         db.add(approval)
 

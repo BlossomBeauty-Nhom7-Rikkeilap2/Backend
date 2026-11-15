@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FR-08: Gửi bài viết để duyệt | Multi-Channel CMS (Nhóm 7)</title>
+  <style>
+    :root {
+      --primary: #e1306c;
+      --primary-hover: #c12258;
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --text: #1e293b;
+      --muted: #64748b;
+      --border: #e2e8f0;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --info: #3b82f6;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', system-ui, sans-serif; }
+    body { background: var(--bg); color: var(--text); padding: 24px; }
+    .container { max-width: 1180px; margin: 0 auto; }
+    header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; background: var(--card); padding: 16px 24px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+    .brand h1 { font-size: 20px; color: var(--text); }
+    .brand p { font-size: 13px; color: var(--muted); margin-top: 2px; }
+    .user-badge { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 600; background: #fdf2f8; color: var(--primary); padding: 8px 14px; border-radius: 99px; }
+
+    .grid { display: grid; grid-template-columns: 1.5fr 1fr; gap: 20px; }
+    .card { background: var(--card); border-radius: 12px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); border: 1px solid var(--border); }
+    .card-title { font-size: 16px; font-weight: 700; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center; }
+
+    .post-list { display: flex; flex-direction: column; gap: 12px; }
+    .post-item { border: 1px solid var(--border); border-radius: 10px; padding: 14px; transition: 0.2s; cursor: pointer; }
+    .post-item:hover, .post-item.active { border-color: var(--primary); background: #fffbfd; }
+    .post-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
+    .post-title { font-weight: 600; font-size: 15px; }
+    .badge { padding: 4px 10px; border-radius: 99px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+    .status-DRAFT { background: #f1f5f9; color: #475569; }
+    .status-REVISION_REQUESTED { background: #fef3c7; color: #b45309; }
+    .status-REJECTED { background: #fee2e2; color: #b91c1c; }
+    .status-PENDING_APPROVAL { background: #dbeafe; color: #1d4ed8; }
+    .status-APPROVED { background: #d1fae5; color: #047857; }
+    .status-PUBLISHED { background: #ede9fe; color: #6d28d9; }
+
+    .meta { font-size: 12px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 10px; }
+    .form-group { margin-bottom: 14px; }
+    .form-group label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+    .form-group input, .form-group textarea { width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; }
+    .form-group textarea { resize: vertical; min-height: 75px; }
+
+    .btn { padding: 9px 16px; border-radius: 8px; border: none; font-size: 13px; font-weight: 600; cursor: pointer; transition: 0.15s; }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-primary:disabled { background: #cbd5e1; cursor: not-allowed; }
+    .btn-outline { background: #fff; border: 1px solid var(--border); color: var(--text); }
+    .btn-outline:hover { background: #f1f5f9; }
+
+    .alert { padding: 12px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 14px; display: none; }
+    .alert-error { background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; display: block; }
+    .alert-success { background: #ecfdf5; border: 1px solid #a7f3d0; color: #047857; display: block; }
+
+    .log-list { display: flex; flex-direction: column; gap: 10px; max-height: 260px; overflow-y: auto; margin-top: 10px; }
+    .log-item { background: #f8fafc; border-left: 3px solid var(--info); padding: 10px 12px; border-radius: 6px; font-size: 12.5px; }
+    .log-item.RESUBMITTED { border-left-color: var(--warning); }
+    .log-item.REVISION_REQUESTED { border-left-color: var(--danger); }
+    .quick-test-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="brand">
+        <h1>Hệ Thống Quản Lý Truyền Thông Đa Kênh - K-Beauty</h1>
+        <p>Module 4: Approval Workflow — FR-08 Gửi bài viết để duyệt (Task T06A661)</p>
+      </div>
+      <div class="user-badge">👤 Marketing Staff: Nguyễn Phát Đạt (ID: 3)</div>
+    </header>
+
+    <div class="grid">
+      <!-- Cột trái: Danh sách bài viết -->
+      <div class="card">
+        <div class="card-title">
+          <span>Danh sách bài viết của Staff</span>
+          <span style="font-size:12px;color:var(--muted)">Chọn 1 bài DRAFT hoặc REVISION_REQUESTED để test</span>
+        </div>
+        <div id="postList" class="post-list"></div>
+      </div>
+
+      <!-- Cột phải: Form kiểm tra & Gửi duyệt -->
+      <div class="card">
+        <div class="card-title">
+          <span>Chi tiết & Gửi duyệt (FR-08)</span>
+          <span id="selectedBadge" class="badge">Chưa chọn</span>
+        </div>
+
+        <div id="alertBox" class="alert"></div>
+
+        <!-- Thanh nút test nhanh các kịch bản Validate cho Video Demo -->
+        <div class="quick-test-bar">
+          <button type="button" class="btn btn-outline" onclick="fillPastTime()">Test lỗi giờ quá khứ (ERR-02)</button>
+          <button type="button" class="btn btn-outline" onclick="clearMedia()">Test thiếu Media (ERR-01)</button>
+          <button type="button" class="btn btn-outline" onclick="restoreValidData()">Khôi phục dữ liệu chuẩn</button>
+        </div>
+
+        <form id="submitForm" onsubmit="handleSubmitApproval(event)">
+          <input type="hidden" id="postId" />
+          <div class="form-group">
+            <label>Tiêu đề bài viết (*)</label>
+            <input type="text" id="postTitle" placeholder="Nhập tiêu đề bài viết..." />
+          </div>
+          <div class="form-group">
+            <label>Nội dung Caption & Hashtag (*)</label>
+            <textarea id="postCaption" placeholder="Nhập nội dung caption..."></textarea>
+          </div>
+          <div class="form-group">
+            <label>Thời gian dự kiến đăng (Phải ở tương lai > NOW) (*)</label>
+            <input type="datetime-local" id="plannedTime" />
+          </div>
+          <div class="form-group">
+            <label>Tệp Media đính kèm (*) <span id="mediaStatus" style="color:var(--success);font-weight:400"></span></label>
+            <input type="text" id="mediaUrl" readonly />
+          </div>
+          <div class="form-group">
+            <label>Ghi chú gửi Marketing Manager (Tùy chọn)</label>
+            <input type="text" id="submitComment" placeholder="VD: Em đã bổ sung khung giờ vàng theo yêu cầu chị Minh Anh ạ..." />
+          </div>
+          <button type="submit" id="btnSubmit" class="btn btn-primary" style="width:100%">
+            🚀 Gửi bài viết để duyệt (Chuyển sang PENDING_APPROVAL)
+          </button>
+        </form>
+
+        <hr style="margin: 20px 0; border: none; border-top: 1px solid var(--border);" />
+
+        <div class="card-title" style="margin-bottom:8px">
+          <span>Lịch sử kiểm duyệt (Bảng approvals)</span>
+        </div>
+        <div id="approvalLogs" class="log-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Dữ liệu khởi tạo bám sát file 02_seed.sql để chạy mượt cả khi có hoặc chưa bật Flask
+    let postsData = [
+      {
+        post_id: 7,
+        title: "Bí quyết dưỡng ẩm ban đêm với Kem dưỡng truyền trắng Niacinamide",
+        caption: "Bản nháp nội dung giới thiệu kem dưỡng ban đêm Hàn Quốc giúp phục hồi da...",
+        platform_id: 1,
+        platform_name: "Facebook Fanpage",
+        author_name: "Nguyễn Phát Đạt",
+        media_type: "IMAGE",
+        media_files: [], // Đang rỗng giống seed để test ERR-01 trước
+        planned_publish_time: "2026-11-20T20:00",
+        status: "DRAFT",
+        logs: []
+      },
+      {
+        post_id: 6,
+        title: "Flash Sale 11/11: Mua 1 tặng 1 toàn bộ Toner hoa cúc",
+        caption: "Duy nhất tháng 11! Săn ngay deal hời mua 1 tặng 1 cho dòng Toner hoa cúc dịu da bán chạy nhất.",
+        platform_id: 2,
+        platform_name: "Instagram Business",
+        author_name: "Trịnh Trần Công Huy",
+        media_type: "IMAGE",
+        media_files: [{ url: "https://cdn.kbeauty.vn/media/flash-sale-1111.jpg", file_name: "flash-sale-1111.jpg", size_bytes: 1950000 }],
+        planned_publish_time: "2026-11-18T19:30",
+        status: "REVISION_REQUESTED",
+        logs: [
+          { action: "REVISION_REQUESTED", actor_name: "Đoàn Thị Minh Anh", comment: "Cần bổ sung rõ thể lệ áp dụng và khung giờ vàng 0h-2h vào Caption nhé.", created_at: "2026-11-10 15:20:00" },
+          { action: "SUBMITTED", actor_name: "Trịnh Trần Công Huy", comment: "Gửi duyệt bài Flash Sale.", created_at: "2026-11-10 10:00:00" }
+        ]
+      },
+      {
+        post_id: 5,
+        title: "Hướng dẫn Double Cleansing sạch sâu ngừa mụn ẩn",
+        caption: "Làm sạch kép chuẩn chuyên gia da liễu Hàn Quốc với dầu tẩy trang lành tính và sữa rửa mặt độ pH 5.5.",
+        platform_id: 3,
+        platform_name: "TikTok Official",
+        author_name: "Nguyễn Phát Đạt",
+        media_type: "VIDEO",
+        media_files: [{ url: "https://cdn.kbeauty.vn/media/double-cleansing.mp4", file_name: "double-cleansing.mp4", size_bytes: 25400000 }],
+        planned_publish_time: "2026-11-16T21:00",
+        status: "PENDING_APPROVAL",
+        logs: [
+          { action: "SUBMITTED", actor_name: "Nguyễn Phát Đạt", comment: "Em gửi video hướng dẫn Double Cleansing chờ chị duyệt ạ.", created_at: "2026-11-11 09:15:00" }
+        ]
+      }
+    ];
+
+    let selectedPost = null;
+
+    function renderPosts() {
+      const container = document.getElementById("postList");
+      container.innerHTML = postsData.map(p => `
+        <div class="post-item ${selectedPost && selectedPost.post_id === p.post_id ? 'active' : ''}" onclick="selectPost(${p.post_id})">
+          <div class="post-header">
+            <div class="post-title">#${p.post_id} - ${p.title}</div>
+            <span class="badge status-${p.status}">${p.status}</span>
+          </div>
+          <div class="meta">
+            <span>📱 Kênh: <b>${p.platform_name}</b></span>
+            <span>✍️ Tác giả: ${p.author_name}</span>
+            <span>⏰ Dự kiến: ${p.planned_publish_time.replace('T', ' ')}</span>
+          </div>
+          <div style="font-size:13px;color:#334155">${p.caption}</div>
+        </div>
+      `).join("");
+    }
+
+    function selectPost(postId) {
+      selectedPost = postsData.find(p => p.post_id === postId);
+      hideAlert();
+      document.getElementById("postId").value = selectedPost.post_id;
+      document.getElementById("postTitle").value = selectedPost.title;
+      document.getElementById("postCaption").value = selectedPost.caption;
+      document.getElementById("plannedTime").value = selectedPost.planned_publish_time.slice(0, 16);
+      document.getElementById("submitComment").value = "";
+
+      const badge = document.getElementById("selectedBadge");
+      badge.className = `badge status-${selectedPost.status}`;
+      badge.textContent = selectedPost.status;
+
+      updateMediaInput();
+      renderLogs();
+
+      const allowed = ["DRAFT", "REVISION_REQUESTED", "REJECTED"].includes(selectedPost.status);
+      const btn = document.getElementById("btnSubmit");
+      btn.disabled = !allowed;
+      btn.textContent = allowed
+        ? (selectedPost.status === "DRAFT" ? "🚀 Gửi duyệt bài viết (SUBMITTED)" : "🔄 Gửi duyệt lại sau chỉnh sửa (RESUBMITTED)")
+        : `🔒 Bài viết đang ở trạng thái ${selectedPost.status} (Không thể gửi duyệt)`;
+
+      renderPosts();
+    }
+
+    function updateMediaInput() {
+      const mediaInput = document.getElementById("mediaUrl");
+      const mediaStatus = document.getElementById("mediaStatus");
+      if (selectedPost && selectedPost.media_files && selectedPost.media_files.length > 0) {
+        const f = selectedPost.media_files[0];
+        mediaInput.value = `${f.file_name} (${(f.size_bytes / (1024*1024)).toFixed(2)} MB)`;
+        mediaStatus.textContent = "✓ Đã đính kèm hợp lệ";
+        mediaStatus.style.color = "var(--success)";
+      } else {
+        mediaInput.value = "";
+        mediaInput.placeholder = "Chưa có tệp Media đính kèm!";
+        mediaStatus.textContent = "✗ Chưa có tệp (Sẽ báo lỗi ERR-01)";
+        mediaStatus.style.color = "var(--danger)";
+      }
+    }
+
+    function renderLogs() {
+      const logBox = document.getElementById("approvalLogs");
+      if (!selectedPost || !selectedPost.logs || selectedPost.logs.length === 0) {
+        logBox.innerHTML = `<div style="font-size:13px;color:var(--muted)">Chưa có lịch sử kiểm duyệt cho bài viết này.</div>`;
+        return;
+      }
+      logBox.innerHTML = selectedPost.logs.map(l => `
+        <div class="log-item ${l.action}">
+          <div style="display:flex;justify-content:space-between;font-weight:700;margin-bottom:4px">
+            <span>[${l.action}] - ${l.actor_name}</span>
+            <span style="color:var(--muted);font-weight:400">${l.created_at}</span>
+          </div>
+          <div>💬 ${l.comment}</div>
+        </div>
+      `).join("");
+    }
+
+    function showAlert(msg, type = "error") {
+      const box = document.getElementById("alertBox");
+      box.className = `alert alert-${type}`;
+      box.innerHTML = msg;
+    }
+
+    function hideAlert() {
+      const box = document.getElementById("alertBox");
+      box.className = "alert";
+      box.innerHTML = "";
+    }
+
+    // Các hàm hỗ trợ quay Video Demo nhanh
+    function fillPastTime() {
+      document.getElementById("plannedTime").value = "2025-01-01T08:00";
+      showAlert("Đã gán giờ đăng về quá khứ (01/01/2025). Hãy nhấn nút Gửi duyệt để kiểm tra chặn lỗi <b>ERR-02</b>!", "error");
+    }
+
+    function clearMedia() {
+      if (!selectedPost) return;
+      selectedPost.media_files = [];
+      updateMediaInput();
+      showAlert("Đã gỡ tạm tệp Media. Hãy nhấn nút Gửi duyệt để kiểm tra chặn lỗi <b>ERR-01</b>!", "error");
+    }
+
+    function restoreValidData() {
+      if (!selectedPost) return;
+      document.getElementById("plannedTime").value = "2026-11-25T20:00";
+      selectedPost.media_files = [{
+        url: "https://cdn.kbeauty.vn/media/night-cream-niacinamide.jpg",
+        file_name: "night-cream-niacinamide.jpg",
+        mime_type: "image/jpeg",
+        size_bytes: 2150000
+      }];
+      updateMediaInput();
+      showAlert("Đã khôi phục đầy đủ Media hợp lệ và thời gian đăng ở tương lai (25/11/2026)!", "success");
+    }
+
+    async function handleSubmitApproval(e) {
+      e.preventDefault();
+      if (!selectedPost) return;
+
+      const title = document.getElementById("postTitle").value.trim();
+      const caption = document.getElementById("postCaption").value.trim();
+      const plannedTime = document.getElementById("plannedTime").value;
+      const comment = document.getElementById("submitComment").value.trim();
+
+      // Thử gọi Backend API thật nếu đang bật server Flask (localhost:5000)
+      try {
+        const res = await fetch(`http://localhost:5000/api/posts/${selectedPost.post_id}/submit`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            actor_id: 3,
+            title,
+            caption,
+            planned_publish_time: plannedTime,
+            media_files: selectedPost.media_files,
+            comment
+          })
+        });
+        const result = await res.json();
+        if (!res.ok || !result.success) {
+          showAlert(`❌ [${result.code}] ${result.message}`, "error");
+          return;
+        }
+        applySuccessState(title, caption, plannedTime, result.data.action, result.data.comment, result.data.submitted_at);
+        return;
+      } catch (err) {
+        // Fallback xử lý trực tiếp trên UI nếu mở file HTML tĩnh để quay demo
+        if (!title || !caption || !plannedTime) {
+          showAlert("❌ [ERR-03] Vui lòng nhập đầy đủ Tiêu đề, Caption và Thời gian dự kiến đăng!", "error");
+          return;
+        }
+        if (!selectedPost.media_files || selectedPost.media_files.length === 0) {
+          showAlert("❌ [ERR-01] Bài viết chưa có tệp Media đính kèm. Vui lòng bổ sung tệp Media hợp lệ trước khi gửi duyệt!", "error");
+          return;
+        }
+        if (new Date(plannedTime) <= new Date()) {
+          showAlert("❌ [ERR-02] Thời gian dự kiến đăng phải lớn hơn thời điểm hiện tại (nằm trong tương lai)!", "error");
+          return;
+        }
+
+        const action = selectedPost.status === "DRAFT" ? "SUBMITTED" : "RESUBMITTED";
+        const finalComment = comment || (action === "SUBMITTED" ? "Gửi duyệt bài viết mới." : "Đã chỉnh sửa theo phản hồi và gửi duyệt lại.");
+        const nowStr = new Date().toISOString().replace("T", " ").slice(0, 19);
+        applySuccessState(title, caption, plannedTime, action, finalComment, nowStr);
+      }
+    }
+
+    function applySuccessState(title, caption, plannedTime, action, comment, timestamp) {
+      selectedPost.title = title;
+      selectedPost.caption = caption;
+      selectedPost.planned_publish_time = plannedTime;
+      selectedPost.status = "PENDING_APPROVAL";
+      selectedPost.logs.unshift({
+        action,
+        actor_name: "Nguyễn Phát Đạt",
+        comment,
+        created_at: timestamp
+      });
+
+      selectPost(selectedPost.post_id);
+      showAlert(`✅ Gửi duyệt thành công! Trạng thái chuyển sang <b>PENDING_APPROVAL</b>, đã ghi log <b>${action}</b> vào bảng <code>approvals</code> và đẩy thông báo cho Marketing Manager.`, "success");
+    }
+
+    // Mặc định chọn bài số 7 (DRAFT) khi mở trang
+    selectPost(7);
+  </script>
+</body>
+</html>

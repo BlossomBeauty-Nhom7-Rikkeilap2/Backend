@@ -3,6 +3,9 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 class ApprovalSubmit(BaseModel):
+    title: Optional[str] = None
+    caption: Optional[str] = None
+    planned_publish_time: Optional[datetime] = None
     comment: Optional[str] = None
 
 class ApprovalAction(BaseModel):
