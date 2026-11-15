@@ -117,7 +117,7 @@
                     <h3 class="text-sm font-semibold text-white flex items-center gap-1.5 mb-2">
                         <i class="fa-solid fa-newspaper text-indigo-400"></i> Kịch bản Nghiệp vụ: Gửi duyệt bài viết mới
                     </h3>
-                    <p class="text-xs text-slate-400 mb-3">Tự động tạo bài viết nháp và gọi API <code>/api/approvals/{post_id}/submit</code> để kích hoạt thông báo tới Manager.</p>
+                    <p class="text-xs text-slate-400 mb-3">Tự động tạo bài viết nháp và gọi API <code>/api/posts/{post_id}/submit</code> để kích hoạt thông báo tới Manager.</p>
                     <div class="space-y-2 mb-3">
                         <input id="post-title" type="text" value="Chiến dịch Khuyến mãi Mùa hè 2026 - Giảm giá 30%" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500">
                         <input id="post-comment" type="text" value="Em vừa soạn xong bài viết cho Facebook và Instagram, kính nhờ sếp duyệt giúp em ạ!" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-indigo-500">
@@ -304,14 +304,13 @@
         // 1. Staff Login
         async function loginStaff() {
             try {
-                const formData = new URLSearchParams();
-                formData.append('username', 'staff1@rikkeilab.vn');
-                formData.append('password', 'Staff@123');
-
                 const res = await fetch('/api/auth/login', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                    body: formData
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        username_or_email: 'staff1@rikkeilab.vn',
+                        password: 'Staff@123'
+                    })
                 });
                 const data = await res.json();
                 if (res.ok && data.access_token) {
@@ -347,8 +346,9 @@
                     },
                     body: JSON.stringify({
                         title: title,
-                        content: "Nội dung bài viết quảng bá thương hiệu do Staff tạo để trình duyệt.",
-                        target_channels: ["FACEBOOK", "INSTAGRAM"]
+                        caption: "Nội dung bài viết quảng bá thương hiệu do Staff tạo để trình duyệt.",
+                        platform_id: 1,
+                        media_type: "IMAGE"
                     })
                 });
                 const createData = await createRes.json();
@@ -361,7 +361,7 @@
 
                 // Step 2: Submit approval
                 logStaff(`Gửi yêu cầu phê duyệt cho bài #${postId}...`);
-                const submitRes = await fetch(`/api/approvals/${postId}/submit`, {
+                const submitRes = await fetch(`/api/posts/${postId}/submit`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -418,14 +418,13 @@
         // ================= MANAGER / RECEIVER =================
         async function loginManager() {
             try {
-                const formData = new URLSearchParams();
-                formData.append('username', 'manager@rikkeilab.vn');
-                formData.append('password', 'Manager@123');
-
                 const res = await fetch('/api/auth/login', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                    body: formData
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        username_or_email: 'manager@rikkeilab.vn',
+                        password: 'Manager@123'
+                    })
                 });
                 const data = await res.json();
                 if (res.ok && data.access_token) {
