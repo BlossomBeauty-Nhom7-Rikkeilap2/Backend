@@ -1,9 +1,10 @@
 import os
 import asyncio
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse
 
 from app.config import settings
 from app.routers import (
@@ -86,5 +87,21 @@ def root_check():
         "version": "1.1.0",
         "status": "online",
         "docs_url": "/docs",
-        "redoc_url": "/redoc"
+        "redoc_url": "/redoc",
+        "demo_notifications_url": "/demo/notifications"
     }
+
+@app.get("/demo/notifications", response_class=HTMLResponse, tags=["Demo & Minh chứng"])
+def demo_notifications_page():
+    """Trang giao diện Demo Minh chứng WebSocket Real-time & Lưu trữ Offline (Task T06A664)."""
+    template_path = os.path.join(os.path.dirname(__file__), "templates", "notification_demo.html")
+    if os.path.exists(template_path):
+        with open(template_path, "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+    return HTMLResponse(content="<h1>Template demo không tìm thấy</h1>", status_code=404)
+
+@app.websocket("/ws/notifications")
+async def root_websocket_notifications(websocket: WebSocket, token: str):
+    """Cổng kết nối WebSocket tại root: ws://localhost:8000/ws/notifications?token=<JWT>"""
+    from app.routers.notifications import handle_websocket_connection
+    await handle_websocket_connection(websocket, token)

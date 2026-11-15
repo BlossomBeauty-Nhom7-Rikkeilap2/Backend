@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Demo WebSocket Realtime Notifications - Task T06A664</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @keyframes pulse-ring {
+            0% { transform: scale(0.95); opacity: 0.8; }
+            50% { transform: scale(1.1); opacity: 0.3; }
+            100% { transform: scale(0.95); opacity: 0.8; }
+        }
+        .online-dot {
+            animation: pulse-ring 2s infinite ease-in-out;
+        }
+        .toast-enter {
+            animation: slideIn 0.35s ease-out forwards;
+        }
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col font-sans">
+    <!-- Header -->
+    <header class="bg-slate-800 border-b border-slate-700 shadow-lg px-6 py-4">
+        <div class="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+                <div class="flex items-center gap-3">
+                    <span class="bg-indigo-600 text-white text-xs font-bold px-2.5 py-1 rounded-full uppercase tracking-wider">Task T06A664</span>
+                    <h1 class="text-xl md:text-2xl font-bold text-white flex items-center gap-2">
+                        <i class="fa-solid fa-bolt text-amber-400"></i> Hạ tầng thông báo thời gian thực WebSocket & Lưu trữ Offline
+                    </h1>
+                </div>
+                <p class="text-sm text-slate-400 mt-1">
+                    Sinh viên thực hiện: <strong class="text-indigo-300">Phan Hoàng Sơn (N25DTCN049)</strong> | Nhóm 7 RikkeiLab 2 - Multi-Channel CMS
+                </p>
+            </div>
+            <!-- SLA Badges -->
+            <div class="flex flex-wrap items-center gap-2 text-xs">
+                <div class="bg-slate-700/80 border border-slate-600 px-3 py-1.5 rounded-lg flex items-center gap-2">
+                    <i class="fa-solid fa-stopwatch text-emerald-400"></i>
+                    <span>SLA Độ trễ: <strong class="text-emerald-400">&lt; 3 giây</strong></span>
+                </div>
+                <div class="bg-slate-700/80 border border-slate-600 px-3 py-1.5 rounded-lg flex items-center gap-2">
+                    <i class="fa-solid fa-database text-blue-400"></i>
+                    <span>Lưu trữ Offline: <strong class="text-blue-400">SQLite/PostgreSQL</strong></span>
+                </div>
+                <div class="bg-slate-700/80 border border-slate-600 px-3 py-1.5 rounded-lg flex items-center gap-2">
+                    <i class="fa-solid fa-satellite-dish text-purple-400"></i>
+                    <span>Giao thức: <strong class="text-purple-400">WebSocket / JSON</strong></span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Guide / Test Scenarios Banner -->
+    <div class="max-w-7xl mx-auto w-full px-6 pt-4">
+        <div class="bg-indigo-950/40 border border-indigo-800/60 rounded-xl p-3.5 text-xs text-indigo-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+            <div class="flex items-start gap-2.5">
+                <i class="fa-solid fa-circle-info text-indigo-400 text-base mt-0.5"></i>
+                <div>
+                    <span class="font-bold text-white">Hướng dẫn kiểm thử minh chứng:</span>
+                    <ul class="list-disc list-inside mt-1 space-y-0.5 text-slate-300">
+                        <li><strong>Kịch bản 1 (Thời gian thực &lt; 3s):</strong> Đăng nhập cả 2 bên. Staff bấm "Gửi duyệt bài viết" hoặc "Bắn thông báo", bên Manager sẽ nhận tức thì trong <strong>vài chục miligiây (&lt; 3s)</strong>.</li>
+                        <li><strong>Kịch bản 2 (Lưu thông báo Offline):</strong> Bên Manager nhấn <strong>"Ngắt kết nối (Giả lập Offline)"</strong> &rarr; Staff bấm gửi &rarr; Manager bấm <strong>"Bật kết nối lại"</strong> &rarr; Hệ thống tự động phục hồi thông báo đã lưu trong Database.</li>
+                    </ul>
+                </div>
+            </div>
+            <a href="/docs" target="_blank" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg whitespace-nowrap transition">
+                <i class="fa-solid fa-book mr-1"></i> Swagger Docs
+            </a>
+        </div>
+    </div>
+
+    <!-- Main Content: 2 Columns Split Screen -->
+    <main class="max-w-7xl mx-auto w-full p-6 flex-1 grid grid-cols-1 lg:grid-cols-2 gap-6">
+        
+        <!-- ================= LEFT: STAFF (SENDER) ================= -->
+        <section class="bg-slate-800/90 border border-slate-700 rounded-2xl p-5 flex flex-col shadow-xl">
+            <!-- Header Staff -->
+            <div class="flex items-center justify-between border-b border-slate-700 pb-3 mb-4">
+                <div class="flex items-center gap-2.5">
+                    <div class="w-9 h-9 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold">
+                        <i class="fa-solid fa-paper-plane"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-lg font-bold text-white">1. Bên Gửi (Staff Client)</h2>
+                        <p class="text-xs text-slate-400">Tạo nội dung & Gửi duyệt bài viết tới Manager</p>
+                    </div>
+                </div>
+                <span id="staff-auth-badge" class="px-2.5 py-1 text-xs rounded-full bg-slate-700 text-slate-300">Chưa đăng nhập</span>
+            </div>
+
+            <!-- Login Box Staff -->
+            <div class="bg-slate-900/70 border border-slate-700/60 rounded-xl p-3 mb-4 text-xs">
+                <div class="flex items-center justify-between mb-2">
+                    <span class="text-slate-400 font-semibold"><i class="fa-solid fa-user-lock mr-1"></i> Xác thực tài khoản Staff</span>
+                    <button onclick="loginStaff()" class="px-3 py-1 bg-amber-600 hover:bg-amber-500 text-white font-medium rounded-lg transition">
+                        <i class="fa-solid fa-arrow-right-to-bracket mr-1"></i> 1-Click Đăng nhập Staff
+                    </button>
+                </div>
+                <div class="grid grid-cols-2 gap-2 text-slate-300">
+                    <div>Email: <code class="text-amber-300">staff1@rikkeilab.vn</code></div>
+                    <div>Pass: <code class="text-amber-300">Staff@123</code></div>
+                </div>
+            </div>
+
+            <!-- Actions Staff -->
+            <div class="space-y-4 flex-1">
+                <!-- Action 1: Workflow Gửi duyệt bài viết thật -->
+                <div class="bg-slate-900/50 border border-slate-700/70 rounded-xl p-4">
+                    <h3 class="text-sm font-semibold text-white flex items-center gap-1.5 mb-2">
+                        <i class="fa-solid fa-newspaper text-indigo-400"></i> Kịch bản Nghiệp vụ: Gửi duyệt bài viết mới
+                    </h3>
+                    <p class="text-xs text-slate-400 mb-3">Tự động tạo bài viết nháp và gọi API <code>/api/approvals/{post_id}/submit</code> để kích hoạt thông báo tới Manager.</p>
+                    <div class="space-y-2 mb-3">
+                        <input id="post-title" type="text" value="Chiến dịch Khuyến mãi Mùa hè 2026 - Giảm giá 30%" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500">
+                        <input id="post-comment" type="text" value="Em vừa soạn xong bài viết cho Facebook và Instagram, kính nhờ sếp duyệt giúp em ạ!" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-indigo-500">
+                    </div>
+                    <button id="btn-submit-post" onclick="submitPostWorkflow()" class="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg shadow transition flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-paper-plane"></i> Gửi duyệt bài viết (Trigger Notification)
+                    </button>
+                </div>
+
+                <!-- Action 2: Bắn thông báo test nhanh -->
+                <div class="bg-slate-900/50 border border-slate-700/70 rounded-xl p-4">
+                    <h3 class="text-sm font-semibold text-white flex items-center gap-1.5 mb-2">
+                        <i class="fa-solid fa-bullhorn text-amber-400"></i> Bắn thông báo trực tiếp kiểm tra độ trễ (Latency Test)
+                    </h3>
+                    <div class="space-y-2 mb-3">
+                        <input id="test-title" type="text" value="Khẩn cấp: Báo cáo hiệu quả bài đăng TikTok" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500">
+                        <input id="test-msg" type="text" value="Số lượt tương tác tăng đột biến 150% trong 1 giờ qua." class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-amber-500">
+                    </div>
+                    <button id="btn-test-broadcast" onclick="sendTestBroadcast()" class="w-full py-2 bg-slate-700 hover:bg-slate-600 text-amber-300 hover:text-white text-xs font-semibold rounded-lg border border-slate-600 transition flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-tower-broadcast"></i> Bắn thông báo Test tới tất cả Manager
+                    </button>
+                </div>
+
+                <!-- Staff Logs -->
+                <div>
+                    <div class="flex items-center justify-between text-xs text-slate-400 mb-1">
+                        <span>Nhật ký hoạt động bên gửi:</span>
+                        <button onclick="clearStaffLogs()" class="hover:text-slate-200">Xóa log</button>
+                    </div>
+                    <div id="staff-logs" class="bg-black/50 border border-slate-800 rounded-xl p-3 h-36 overflow-y-auto font-mono text-[11px] text-slate-300 space-y-1">
+                        <div class="text-slate-500">&gt; Sẵn sàng. Nhấn "1-Click Đăng nhập Staff" để bắt đầu...</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ================= RIGHT: MANAGER (RECEIVER & REALTIME WS) ================= -->
+        <section class="bg-slate-800/90 border border-slate-700 rounded-2xl p-5 flex flex-col shadow-xl">
+            <!-- Header Manager -->
+            <div class="flex items-center justify-between border-b border-slate-700 pb-3 mb-4">
+                <div class="flex items-center gap-2.5">
+                    <div class="w-9 h-9 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">
+                        <i class="fa-solid fa-bell"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-lg font-bold text-white">2. Bên Nhận (Manager Realtime Dashboard)</h2>
+                        <p class="text-xs text-slate-400">Lắng nghe WebSocket & Giám sát độ trễ &lt; 3s</p>
+                    </div>
+                </div>
+                <!-- Unread Badge -->
+                <div class="flex items-center gap-2">
+                    <span id="unread-pill" class="bg-rose-500/20 border border-rose-500/40 text-rose-300 text-xs px-2.5 py-1 rounded-full font-bold flex items-center gap-1.5">
+                        <i class="fa-solid fa-envelope"></i> <span id="unread-count">0</span> chưa đọc
+                    </span>
+                </div>
+            </div>
+
+            <!-- Manager Login & WS Switch -->
+            <div class="bg-slate-900/70 border border-slate-700/60 rounded-xl p-3 mb-4 text-xs space-y-3">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                        <div class="text-slate-300 font-semibold">Tài khoản: <code class="text-emerald-300">manager@rikkeilab.vn</code> / <code class="text-emerald-300">Manager@123</code></div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button onclick="loginManager()" class="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-medium rounded-lg transition whitespace-nowrap">
+                            <i class="fa-solid fa-arrow-right-to-bracket mr-1"></i> Đăng nhập Manager
+                        </button>
+                    </div>
+                </div>
+
+                <!-- WebSocket Connection Controller -->
+                <div class="pt-2 border-t border-slate-800 flex flex-wrap items-center justify-between gap-2">
+                    <div class="flex items-center gap-2">
+                        <span class="text-slate-400">Trạng thái kết nối WebSocket:</span>
+                        <span id="ws-status-badge" class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-500/20 text-rose-300 border border-rose-500/30 flex items-center gap-1.5">
+                            <span class="w-2 h-2 rounded-full bg-rose-500"></span> OFFLINE (Chưa kết nối)
+                        </span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button id="btn-toggle-ws" onclick="toggleWebSocket()" class="px-3 py-1 bg-slate-700 hover:bg-slate-600 text-white text-xs font-medium rounded-lg border border-slate-600 transition">
+                            <i class="fa-solid fa-plug mr-1"></i> Bật kết nối WebSocket
+                        </button>
+                        <button onclick="reloadNotificationsFromDB()" title="Lấy thông báo đã lưu trong Database" class="px-3 py-1 bg-blue-600/30 hover:bg-blue-600/50 text-blue-300 text-xs font-medium rounded-lg border border-blue-500/40 transition">
+                            <i class="fa-solid fa-rotate-right mr-1"></i> Đồng bộ DB
+                        </button>
+                        <button onclick="markAllAsRead()" title="Đánh dấu tất cả đã đọc" class="px-3 py-1 bg-slate-700 hover:bg-slate-600 text-slate-300 text-xs font-medium rounded-lg border border-slate-600 transition">
+                            <i class="fa-solid fa-check-double mr-1"></i> Đã đọc hết
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Real-time SLA Latency Monitor -->
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4 text-xs">
+                <div class="bg-slate-900/60 border border-slate-700/60 rounded-xl p-3 flex flex-col justify-between">
+                    <span class="text-slate-400">Độ trễ truyền tải:</span>
+                    <div class="text-lg font-bold mt-1 text-emerald-400 flex items-center gap-1.5">
+                        <span id="latency-val">--</span>
+                    </div>
+                    <span id="latency-eval" class="text-[10px] text-slate-500">Chờ nhận sự kiện...</span>
+                </div>
+                <div class="bg-slate-900/60 border border-slate-700/60 rounded-xl p-3 flex flex-col justify-between">
+                    <span class="text-slate-400">Server phát lúc:</span>
+                    <div id="server-time" class="text-xs font-mono font-medium text-slate-200 mt-1 truncate">--</div>
+                    <span class="text-[10px] text-slate-500">ISO 8601 UTC</span>
+                </div>
+                <div class="bg-slate-900/60 border border-slate-700/60 rounded-xl p-3 flex flex-col justify-between col-span-2 sm:col-span-1">
+                    <span class="text-slate-400">Client nhận lúc:</span>
+                    <div id="client-time" class="text-xs font-mono font-medium text-slate-200 mt-1 truncate">--</div>
+                    <span class="text-[10px] text-slate-500">Thời gian thực trình duyệt</span>
+                </div>
+            </div>
+
+            <!-- Live Notifications List -->
+            <div class="flex-1 flex flex-col">
+                <div class="flex items-center justify-between text-xs text-slate-400 mb-2">
+                    <span class="font-semibold text-slate-300"><i class="fa-solid fa-list-check mr-1"></i> Hộp thông báo thời gian thực & Offline (DB):</span>
+                    <span class="text-[11px] text-slate-500">Tự động cập nhật tức thì</span>
+                </div>
+                <div id="notification-feed" class="bg-black/30 border border-slate-800 rounded-xl p-3 flex-1 overflow-y-auto space-y-2.5 max-h-[380px]">
+                    <div id="empty-feed" class="text-center py-12 text-slate-500 text-xs">
+                        <i class="fa-regular fa-bell-slash text-3xl mb-2 block text-slate-600"></i>
+                        Chưa có thông báo nào. Hãy đăng nhập Manager và bật WebSocket để nhận thông báo!
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Floating Toast Notification Container -->
+    <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-sm pointer-events-none"></div>
+
+    <!-- Script Implementation -->
+    <script>
+        // Global State
+        let staffToken = null;
+        let managerToken = null;
+        let managerUserId = null;
+        let ws = null;
+        let isWsOnline = false;
+
+        // Logging helper for Staff
+        function logStaff(msg, type = 'info') {
+            const logs = document.getElementById('staff-logs');
+            const color = type === 'success' ? 'text-emerald-400' : type === 'error' ? 'text-rose-400' : 'text-slate-300';
+            const time = new Date().toLocaleTimeString();
+            const item = document.createElement('div');
+            item.className = color;
+            item.innerHTML = `<span class="text-slate-500">[${time}]</span> ${msg}`;
+            logs.appendChild(item);
+            logs.scrollTop = logs.scrollHeight;
+        }
+
+        function clearStaffLogs() {
+            document.getElementById('staff-logs').innerHTML = '';
+        }
+
+        // Show Toast Popup
+        function showToast(title, message, latency = null) {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = 'toast-enter pointer-events-auto bg-slate-800/95 border-l-4 border-indigo-500 border border-slate-700 shadow-2xl rounded-xl p-3.5 text-xs text-white flex items-start gap-3 backdrop-blur';
+            toast.innerHTML = `
+                <div class="text-indigo-400 text-lg mt-0.5"><i class="fa-solid fa-bell"></i></div>
+                <div class="flex-1">
+                    <div class="font-bold flex items-center justify-between">
+                        <span>${title}</span>
+                        ${latency !== null ? `<span class="text-[10px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded font-mono font-semibold">${latency}ms (&lt; 3s)</span>` : ''}
+                    </div>
+                    <p class="text-slate-300 mt-0.5">${message}</p>
+                    <span class="text-[10px] text-slate-500 block mt-1">${new Date().toLocaleTimeString()}</span>
+                </div>
+            `;
+            container.appendChild(toast);
+            setTimeout(() => {
+                toast.style.transition = 'all 0.5s ease';
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateY(20px)';
+                setTimeout(() => toast.remove(), 500);
+            }, 5000);
+        }
+
+        // 1. Staff Login
+        async function loginStaff() {
+            try {
+                const formData = new URLSearchParams();
+                formData.append('username', 'staff1@rikkeilab.vn');
+                formData.append('password', 'Staff@123');
+
+                const res = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: formData
+                });
+                const data = await res.json();
+                if (res.ok && data.access_token) {
+                    staffToken = data.access_token;
+                    document.getElementById('staff-auth-badge').className = 'px-2.5 py-1 text-xs rounded-full bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-500/30';
+                    document.getElementById('staff-auth-badge').innerHTML = '<i class="fa-solid fa-check mr-1"></i> Staff Đã đăng nhập';
+                    logStaff('Đăng nhập Staff thành công! Token JWT đã lưu.', 'success');
+                } else {
+                    logStaff('Đăng nhập Staff thất bại: ' + (data.detail || JSON.stringify(data)), 'error');
+                }
+            } catch (err) {
+                logStaff('Lỗi kết nối API đăng nhập Staff: ' + err.message, 'error');
+            }
+        }
+
+        // 2. Staff Submit Post Workflow
+        async function submitPostWorkflow() {
+            if (!staffToken) {
+                await loginStaff();
+                if (!staffToken) return;
+            }
+            const title = document.getElementById('post-title').value;
+            const comment = document.getElementById('post-comment').value;
+
+            try {
+                logStaff(`Đang tạo bài viết mới: "${title}"...`);
+                // Step 1: Create draft post
+                const createRes = await fetch('/api/posts', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${staffToken}`
+                    },
+                    body: JSON.stringify({
+                        title: title,
+                        content: "Nội dung bài viết quảng bá thương hiệu do Staff tạo để trình duyệt.",
+                        target_channels: ["FACEBOOK", "INSTAGRAM"]
+                    })
+                });
+                const createData = await createRes.json();
+                if (!createRes.ok) {
+                    logStaff('Lỗi tạo bài viết: ' + (createData.detail || JSON.stringify(createData)), 'error');
+                    return;
+                }
+                const postId = createData.post_id;
+                logStaff(`Tạo bài viết thành công (ID: ${postId}, Trạng thái: DRAFT).`, 'success');
+
+                // Step 2: Submit approval
+                logStaff(`Gửi yêu cầu phê duyệt cho bài #${postId}...`);
+                const submitRes = await fetch(`/api/approvals/${postId}/submit`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${staffToken}`
+                    },
+                    body: JSON.stringify({ comment: comment })
+                });
+                const submitData = await submitRes.json();
+                if (submitRes.ok) {
+                    logStaff(`Gửi duyệt thành công! Trạng thái chuyển sang PENDING_APPROVAL. Đã phát WebSocket tới Manager.`, 'success');
+                } else {
+                    logStaff('Lỗi gửi duyệt: ' + (submitData.detail || JSON.stringify(submitData)), 'error');
+                }
+            } catch (err) {
+                logStaff('Lỗi quy trình gửi duyệt: ' + err.message, 'error');
+            }
+        }
+
+        // 3. Staff Test Broadcast
+        async function sendTestBroadcast() {
+            if (!staffToken) {
+                await loginStaff();
+                if (!staffToken) return;
+            }
+            const title = document.getElementById('test-title').value;
+            const message = document.getElementById('test-msg').value;
+
+            try {
+                logStaff(`Bắn thông báo kiểm thử tới toàn bộ Manager...`);
+                const res = await fetch('/api/notifications/test-broadcast', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${staffToken}`
+                    },
+                    body: JSON.stringify({
+                        title: title,
+                        message: message,
+                        notification_type: 'SYSTEM_TEST',
+                        target_role: 'MANAGER'
+                    })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    logStaff(`Bắn thông báo thành công! Lưu DB: ${data.saved_to_db_count}, Live WS: ${data.delivered_live_ws_count}`, 'success');
+                } else {
+                    logStaff('Lỗi bắn thông báo: ' + (data.detail || JSON.stringify(data)), 'error');
+                }
+            } catch (err) {
+                logStaff('Lỗi gọi API broadcast: ' + err.message, 'error');
+            }
+        }
+
+        // ================= MANAGER / RECEIVER =================
+        async function loginManager() {
+            try {
+                const formData = new URLSearchParams();
+                formData.append('username', 'manager@rikkeilab.vn');
+                formData.append('password', 'Manager@123');
+
+                const res = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: formData
+                });
+                const data = await res.json();
+                if (res.ok && data.access_token) {
+                    managerToken = data.access_token;
+                    // Connect WebSocket automatically
+                    connectWebSocket();
+                    // Load notifications from DB
+                    reloadNotificationsFromDB();
+                } else {
+                    alert('Đăng nhập Manager thất bại: ' + (data.detail || JSON.stringify(data)));
+                }
+            } catch (err) {
+                alert('Lỗi đăng nhập Manager: ' + err.message);
+            }
+        }
+
+        function toggleWebSocket() {
+            if (isWsOnline && ws) {
+                disconnectWebSocket();
+            } else {
+                if (!managerToken) {
+                    loginManager();
+                } else {
+                    connectWebSocket();
+                }
+            }
+        }
+
+        function updateWsStatus(online) {
+            isWsOnline = online;
+            const badge = document.getElementById('ws-status-badge');
+            const btn = document.getElementById('btn-toggle-ws');
+            if (online) {
+                badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1.5';
+                badge.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-400 online-dot"></span> ONLINE (Đang lắng nghe)';
+                btn.innerHTML = '<i class="fa-solid fa-power-off mr-1"></i> Ngắt kết nối (Giả lập Offline)';
+                btn.className = 'px-3 py-1 bg-rose-600/30 hover:bg-rose-600/50 text-rose-300 text-xs font-medium rounded-lg border border-rose-500/40 transition';
+            } else {
+                badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-700 text-slate-400 border border-slate-600 flex items-center gap-1.5';
+                badge.innerHTML = '<span class="w-2 h-2 rounded-full bg-slate-400"></span> OFFLINE (Đã ngắt)';
+                btn.innerHTML = '<i class="fa-solid fa-plug mr-1"></i> Bật kết nối lại (Online)';
+                btn.className = 'px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium rounded-lg transition';
+            }
+        }
+
+        function connectWebSocket() {
+            if (!managerToken) return;
+            if (ws) {
+                try { ws.close(); } catch(e){}
+            }
+
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/api/ws/notifications?token=${managerToken}`;
+
+            try {
+                ws = new WebSocket(wsUrl);
+
+                ws.onopen = () => {
+                    updateWsStatus(true);
+                };
+
+                ws.onmessage = (event) => {
+                    const clientReceiveTime = new Date();
+                    const data = JSON.parse(event.data);
+                    handleIncomingWsMessage(data, clientReceiveTime);
+                };
+
+                ws.onerror = (err) => {
+                    console.error('WebSocket error:', err);
+                };
+
+                ws.onclose = () => {
+                    updateWsStatus(false);
+                };
+            } catch (err) {
+                console.error('Failed to open WS:', err);
+                updateWsStatus(false);
+            }
+        }
+
+        function disconnectWebSocket() {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+            updateWsStatus(false);
+        }
+
+        // Handle incoming WebSocket message
+        function handleIncomingWsMessage(data, clientReceiveTime) {
+            console.log('WS Received:', data);
+
+            // Calculate latency if server_timestamp exists
+            let latencyMs = null;
+            if (data.server_timestamp) {
+                const serverTime = new Date(data.server_timestamp);
+                latencyMs = clientReceiveTime.getTime() - serverTime.getTime();
+                if (latencyMs < 0) latencyMs = 0; // clock skew guard
+
+                document.getElementById('server-time').innerText = serverTime.toLocaleTimeString() + '.' + String(serverTime.getMilliseconds()).padStart(3, '0');
+                document.getElementById('client-time').innerText = clientReceiveTime.toLocaleTimeString() + '.' + String(clientReceiveTime.getMilliseconds()).padStart(3, '0');
+                
+                const latencyEl = document.getElementById('latency-val');
+                const evalEl = document.getElementById('latency-eval');
+                latencyEl.innerText = `${latencyMs} ms`;
+                if (latencyMs < 3000) {
+                    latencyEl.className = 'text-lg font-bold mt-1 text-emerald-400 flex items-center gap-1.5';
+                    evalEl.innerHTML = '<span class="text-emerald-400 font-bold"><i class="fa-solid fa-circle-check"></i> ĐẠT CHUẨN (&lt; 3.000 ms)</span>';
+                } else {
+                    latencyEl.className = 'text-lg font-bold mt-1 text-rose-400 flex items-center gap-1.5';
+                    evalEl.innerHTML = '<span class="text-rose-400 font-bold"><i class="fa-solid fa-triangle-exclamation"></i> VƯỢT QUÁ 3 GIÂY</span>';
+                }
+            }
+
+            if (data.type === 'CONNECTION_ESTABLISHED') {
+                showToast('Kết nối WebSocket thành công', data.message);
+                if (data.unread_count !== undefined) {
+                    updateUnreadCount(data.unread_count);
+                }
+                reloadNotificationsFromDB();
+                return;
+            }
+
+            // Normal notification received!
+            const title = data.title || (data.type === 'APPROVAL_REQUEST' ? 'Yêu cầu duyệt bài viết' : 'Thông báo mới');
+            const message = data.message || `Bài viết #${data.post_id || ''}: "${data.title || ''}" do ${data.author_name || 'Staff'} gửi duyệt.`;
+            
+            showToast(title, message, latencyMs);
+            // Prepend to feed
+            addNotificationCard({
+                notification_id: data.notification_id || Date.now(),
+                title: title,
+                message: message,
+                notification_type: data.type,
+                is_read: false,
+                created_at: data.server_timestamp || new Date().toISOString()
+            }, true);
+
+            incrementUnreadCount();
+        }
+
+        function updateUnreadCount(count) {
+            document.getElementById('unread-count').innerText = count;
+            const pill = document.getElementById('unread-pill');
+            if (count > 0) {
+                pill.className = 'bg-rose-500/20 border border-rose-500/40 text-rose-300 text-xs px-2.5 py-1 rounded-full font-bold flex items-center gap-1.5 animate-bounce';
+            } else {
+                pill.className = 'bg-slate-700 border border-slate-600 text-slate-400 text-xs px-2.5 py-1 rounded-full font-bold flex items-center gap-1.5';
+            }
+        }
+
+        function incrementUnreadCount() {
+            const current = parseInt(document.getElementById('unread-count').innerText) || 0;
+            updateUnreadCount(current + 1);
+        }
+
+        // Fetch notifications from DB (Test Offline Recovery)
+        async function reloadNotificationsFromDB() {
+            if (!managerToken) return;
+            try {
+                const res = await fetch('/api/notifications?limit=30', {
+                    headers: { 'Authorization': `Bearer ${managerToken}` }
+                });
+                const data = await res.json();
+                if (res.ok && Array.isArray(data)) {
+                    renderNotificationFeed(data);
+                    const unread = data.filter(n => !n.is_read).length;
+                    updateUnreadCount(unread);
+                }
+            } catch (err) {
+                console.error('Error fetching notifications:', err);
+            }
+        }
+
+        function renderNotificationFeed(items) {
+            const feed = document.getElementById('notification-feed');
+            if (!items || items.length === 0) {
+                feed.innerHTML = `
+                    <div id="empty-feed" class="text-center py-12 text-slate-500 text-xs">
+                        <i class="fa-regular fa-bell-slash text-3xl mb-2 block text-slate-600"></i>
+                        Không có thông báo nào trong cơ sở dữ liệu.
+                    </div>
+                `;
+                return;
+            }
+
+            feed.innerHTML = '';
+            items.forEach(item => addNotificationCard(item, false));
+        }
+
+        function addNotificationCard(notif, isNewRealtime = false) {
+            const feed = document.getElementById('notification-feed');
+            const empty = document.getElementById('empty-feed');
+            if (empty) empty.remove();
+
+            const card = document.createElement('div');
+            const isRead = notif.is_read;
+            const bgClass = isRead ? 'bg-slate-900/40 border-slate-800 text-slate-400' : 'bg-slate-800 border-indigo-500/50 text-white shadow-md';
+            const icon = notif.notification_type === 'APPROVAL_REQUEST' ? 'fa-file-signature text-amber-400' : 'fa-bell text-indigo-400';
+
+            card.id = `notif-${notif.notification_id}`;
+            card.className = `border rounded-xl p-3 text-xs transition flex items-start gap-3 ${bgClass} ${isNewRealtime ? 'toast-enter ring-2 ring-indigo-500/40' : ''}`;
+            
+            const timeStr = notif.created_at ? new Date(notif.created_at).toLocaleString() : 'Vừa xong';
+
+            card.innerHTML = `
+                <div class="mt-0.5 text-base"><i class="fa-solid ${icon}"></i></div>
+                <div class="flex-1">
+                    <div class="flex items-center justify-between">
+                        <span class="font-bold text-slate-200">${notif.title}</span>
+                        <span class="text-[10px] text-slate-500 font-mono">${timeStr}</span>
+                    </div>
+                    <p class="text-slate-300 mt-1">${notif.message}</p>
+                    <div class="flex items-center justify-between mt-2 pt-1.5 border-t border-slate-700/40 text-[10px]">
+                        <span class="text-slate-500 font-mono">Loại: ${notif.notification_type || 'NOTIFICATION'}</span>
+                        ${!isRead ? `
+                            <button onclick="markOneAsRead(${notif.notification_id})" class="text-indigo-400 hover:text-indigo-300 font-semibold flex items-center gap-1">
+                                <i class="fa-solid fa-check"></i> Đánh dấu đã đọc
+                            </button>
+                        ` : '<span class="text-slate-500"><i class="fa-solid fa-check-double text-slate-600"></i> Đã đọc</span>'}
+                    </div>
+                </div>
+            `;
+
+            if (isNewRealtime && feed.firstChild) {
+                feed.insertBefore(card, feed.firstChild);
+            } else {
+                feed.appendChild(card);
+            }
+        }
+
+        // Mark single notification as read
+        async function markOneAsRead(id) {
+            if (!managerToken) return;
+            try {
+                const res = await fetch(`/api/notifications/${id}/read`, {
+                    method: 'PATCH',
+                    headers: { 'Authorization': `Bearer ${managerToken}` }
+                });
+                if (res.ok) {
+                    reloadNotificationsFromDB();
+                }
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        // Mark all as read
+        async function markAllAsRead() {
+            if (!managerToken) return;
+            try {
+                const res = await fetch(`/api/notifications/read-all`, {
+                    method: 'PATCH',
+                    headers: { 'Authorization': `Bearer ${managerToken}` }
+                });
+                if (res.ok) {
+                    reloadNotificationsFromDB();
+                }
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        // Auto login manager on page load for immediate demo readiness
+        window.addEventListener('DOMContentLoaded', () => {
+            loginManager();
+        });
+    </script>
+</body>
+</html>
