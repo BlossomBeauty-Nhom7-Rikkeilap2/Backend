@@ -44,5 +44,11 @@ def update_schedule(
         "message": "Cập nhật lịch đăng thành công",
         "schedule_id": sched.schedule_id,
         "post_id": sched.post_id,
-        "scheduled_time": sched.scheduled_time
+        "scheduled_time": sched.scheduled_time,
+        "schedule_status": sched.schedule_status,
+        "flags_reset": {
+            "is_reminded_30m": sched.is_reminded_30m,
+            "is_reminded_10m": sched.is_reminded_10m,
+            "is_overdue_alerted": sched.is_overdue_alerted
+        }
     }
