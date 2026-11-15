@@ -62,3 +62,16 @@ def get_approval_history(
     db: Session = Depends(get_db)
 ):
     return ApprovalService.get_approval_history(db, post_id)
+
+@router.post(
+    "/{post_id}/withdraw",
+    response_model=ApprovalResponse,
+    summary="Thu hồi bài viết về bản nháp khi đang chờ duyệt (+1 điểm thưởng)",
+    description="Chỉ tác giả (Staff) được phép thu hồi khi bài viết đang ở trạng thái PENDING_APPROVAL."
+)
+async def withdraw_post(
+    post_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    return await ApprovalService.withdraw_post(db, post_id, current_user)

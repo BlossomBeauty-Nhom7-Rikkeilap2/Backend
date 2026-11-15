@@ -202,3 +202,49 @@ class ApprovalService:
     def get_approval_history(db: Session, post_id: int) -> List[Approval]:
         """Xem toàn bộ lịch sử duyệt bài của một Post (BR-07)."""
         return db.query(Approval).filter(Approval.post_id == post_id).order_by(Approval.created_at.desc()).all()
+
+    @staticmethod
+    async def withdraw_post(db: Session, post_id: int, current_user: User) -> Approval:
+        """
+        Thu hồi bài viết về bản nháp (DRAFT) khi đang chờ duyệt (FR-09/10 Bonus +1).
+        Chỉ chính tác giả (Staff) mới được phép thu hồi khi bài ở PENDING_APPROVAL.
+        """
+        post = db.query(Post).filter(Post.post_id == post_id, Post.deleted_at.is_(None)).first()
+        if not post:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy bài viết")
+
+        if post.author_id != current_user.user_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Chỉ tác giả mới được phép thu hồi bài viết này")
+
+        if post.status != "PENDING_APPROVAL":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Chỉ có thể thu hồi bài viết đang ở trạng thái Chờ duyệt (PENDING_APPROVAL), trạng thái hiện tại là {post.status}"
+            )
+
+        try:
+            post.status = "DRAFT"
+            approval = Approval(
+                post_id=post_id,
+                actor_id=current_user.user_id,
+                action="REVISION_REQUESTED",
+                comment="Tác giả tự thu hồi bài viết về bản nháp để chỉnh sửa thêm."
+            )
+            db.add(approval)
+            db.commit()
+            db.refresh(approval)
+
+            await ws_manager.broadcast_to_role("MANAGER", {
+                "type": "POST_WITHDRAWN",
+                "post_id": post.post_id,
+                "title": post.title,
+                "author": current_user.full_name
+            })
+
+            return approval
+        except Exception as e:
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Lỗi khi thu hồi bài viết: {str(e)}"
+            )
