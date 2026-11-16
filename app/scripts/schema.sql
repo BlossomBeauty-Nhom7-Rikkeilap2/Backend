@@ -160,7 +160,7 @@ CREATE INDEX idx_notif_recipient_unread ON notifications(recipient_id, is_read, 
 CREATE INDEX idx_stats_post_recorded ON post_statistics(post_id, recorded_at DESC);
 
 -- ------------------------------------------------------------------------------
--- 10. DỮ LIỆU HẠT GIỐNG BAN ĐẦU (SEED DATA THEO MỤC 4.5 SDD)
+-- 10. DỮ LIỆU HẠT GIỐNG BAN ĐẦU (SEED DATA THEO MỤC 4.5 SDD & TASK T06A65C)
 -- ------------------------------------------------------------------------------
 -- 10.1. Khởi tạo Vai trò cố định (Role)
 INSERT INTO roles (role_id, role_code, role_name, permissions) VALUES 
@@ -168,16 +168,34 @@ INSERT INTO roles (role_id, role_code, role_name, permissions) VALUES
 (2, 'STAFF', 'Marketing Staff', '{"create_post": true, "edit_draft": true, "submit_approval": true}')
 ON DUPLICATE KEY UPDATE role_name = VALUES(role_name);
 
--- 10.2. Khởi tạo 3 Kênh truyền thông ban đầu (Platform)
+-- 10.2. Khởi tạo 3 Kênh truyền thông ban đầu (Platform: Facebook, Instagram, Threads)
 INSERT INTO platforms (platform_id, platform_code, platform_name, channel_url, color_hex) VALUES 
 (1, 'FACEBOOK', 'Facebook Fanpage', 'https://facebook.com/korean_cosmetics_sample', '#1877F2'),
 (2, 'INSTAGRAM', 'Instagram Business', 'https://instagram.com/korean_cosmetics_sample', '#E1306C'),
-(3, 'TIKTOK', 'TikTok Official', 'https://tiktok.com/@korean_cosmetics_sample', '#00F2FE')
+(3, 'THREADS', 'Threads Official', 'https://www.threads.net/@korean_cosmetics_sample', '#000000')
 ON DUPLICATE KEY UPDATE platform_name = VALUES(platform_name);
 
--- 10.3. Khởi tạo Tài khoản mẫu thử nghiệm (Mật khẩu mặc định: Manager@123 / Staff@123 được mã hóa bằng bcrypt)
--- Mật khẩu đã băm: $2b$12$e6n.VfN48bXqQjKj3K1Z7eMmsJ0Q9xG0O5uW0jE3y.fS2H.9f/gSu
+-- 10.3. Khởi tạo 1 Manager và 4 Staff mẫu thử nghiệm (Mật khẩu: Manager@123 / Staff@123)
+-- Chuỗi băm bcrypt: $2b$12$6Kk4B7a1jN9kQz8sR7qDse0hV3yF1fS9mX0qZ2lA3pB4c5d6e7f8g
 INSERT INTO users (user_id, username, email, password_hash, full_name, role_id, status) VALUES 
-(1, 'manager', 'manager@rikkeilab.vn', '$2b$12$6Kk4B7a1jN9kQz8sR7qDse0hV3yF1fS9mX0qZ2lA3pB4c5d6e7f8g', 'Marketing Manager (Quản lý)', 1, 'ACTIVE'),
-(2, 'staff1', 'staff1@rikkeilab.vn', '$2b$12$6Kk4B7a1jN9kQz8sR7qDse0hV3yF1fS9mX0qZ2lA3pB4c5d6e7f8g', 'Marketing Staff 01', 2, 'ACTIVE')
+(1, 'manager', 'manager@rikkeilab.vn', '$2b$12$6Kk4B7a1jN9kQz8sR7qDse0hV3yF1fS9mX0qZ2lA3pB4c5d6e7f8g', 'Doãn Thị Minh Anh (Manager)', 1, 'ACTIVE'),
+(2, 'staff1', 'staff1@rikkeilab.vn', '$2b$12$6Kk4B7a1jN9kQz8sR7qDse0hV3yF1fS9mX0qZ2lA3pB4c5d6e7f8g', 'Trịnh Trần Công Huy (Staff)', 2, 'ACTIVE'),
+(3, 'staff2', 'staff2@rikkeilab.vn', '$2b$12$6Kk4B7a1jN9kQz8sR7qDse0hV3yF1fS9mX0qZ2lA3pB4c5d6e7f8g', 'Nguyễn Văn Đạt (Staff)', 2, 'ACTIVE'),
+(4, 'staff3', 'staff3@rikkeilab.vn', '$2b$12$6Kk4B7a1jN9kQz8sR7qDse0hV3yF1fS9mX0qZ2lA3pB4c5d6e7f8g', 'Phan Hoàng Sơn (Staff)', 2, 'ACTIVE'),
+(5, 'staff4', 'staff4@rikkeilab.vn', '$2b$12$6Kk4B7a1jN9kQz8sR7qDse0hV3yF1fS9mX0qZ2lA3pB4c5d6e7f8g', 'Lê Thị Thu Thảo (Staff)', 2, 'ACTIVE')
 ON DUPLICATE KEY UPDATE full_name = VALUES(full_name);
+
+-- 10.4. Khởi tạo các Bài viết mẫu (Posts & Approvals)
+INSERT INTO posts (post_id, title, caption, hashtags, platform_id, author_id, media_type, status, total_media_size_bytes) VALUES
+(1, 'Bộ sưu tập Son Dưỡng Thu Đông 2026 - Hương Đào Tự Nhiên', 'Khám phá dòng son dưỡng thuần chay chiết xuất từ hoa quả tươi hữu cơ, cấp ẩm sâu 24h.', '#SonDuong #BlossomBeauty #VeganCosmetics #LipCare', 1, 2, 'IMAGE', 'DRAFT', 358400),
+(2, 'Top 5 Serum Dưỡng Trắng & Mờ Thâm Được Yêu Thích Nhất', 'Review chân thực 5 dòng serum quốc dân phục hồi hàng rào bảo vệ da và làm đều màu da.', '#Skincare #Serum #BeautyTips #Whitening', 2, 3, 'IMAGE', 'PENDING_APPROVAL', 524288),
+(3, 'Tips Chăm Sóc Da Dầu Mụn Cho Gen Z Trong Mùa Hè', 'Bỏ túi ngay 3 thói quen đơn giản giúp kiềm dầu cả ngày và ngăn ngừa mụn ẩn hiệu quả.', '#Threads #TipsChamsocda #AcneCare #BlossomGenZ', 3, 4, 'IMAGE', 'APPROVED', 614400),
+(4, 'Đại Tiệc Sale Cuối Tuần - Giảm 50% Toàn Bộ Cửa Hàng', 'Duy nhất cuối tuần này tại hệ thống showroom Blossom Beauty trên toàn quốc. Đừng bỏ lỡ!', '#SaleCuoiTuan #KhuyenMai #BlossomBeauty #BigSale', 1, 2, 'IMAGE', 'PUBLISHED', 819200),
+(5, 'Threads Hot: Liệu Có Cần Dùng Kem Chống Nắng Trong Nhà?', 'Tia UVA vẫn xuyên qua kính cửa sổ và ánh sáng xanh từ màn hình máy tính có thực sự gây hại?', '#Threads #Sunscreen #SkincareScience #FactCheck', 3, 5, 'IMAGE', 'PUBLISHED', 430080)
+ON DUPLICATE KEY UPDATE title = VALUES(title);
+
+-- 10.5. Khởi tạo Thống kê tương tác mẫu (Post Statistics)
+INSERT INTO post_statistics (stat_id, post_id, reach_count, view_count, like_count, comment_count, share_count, source_type, updated_by) VALUES
+(1, 4, 15800, 11200, 850, 120, 54, 'API', 2),
+(2, 5, 6200, 4900, 410, 45, 22, 'MANUAL', 5)
+ON DUPLICATE KEY UPDATE view_count = VALUES(view_count);
