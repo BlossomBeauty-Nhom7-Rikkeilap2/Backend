@@ -17,12 +17,12 @@ from app.routers import (
     notifications,
     social,
 )
-from app.services.scheduler_worker import system_timer_worker
+from app.services.scheduler_worker import reminder_cron_worker, system_timer_worker
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Khởi chạy System Timer quét lịch ngầm
-    timer_task = asyncio.create_task(system_timer_worker())
+    # Khởi chạy ReminderCronWorker quét lịch ngầm mỗi 60 giây (FR-12 & SDD 2.1)
+    timer_task = asyncio.create_task(reminder_cron_worker())
     # Đảm bảo thư mục uploads tồn tại
     os.makedirs(settings.LOCAL_UPLOAD_DIR, exist_ok=True)
     yield

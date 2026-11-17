@@ -73,6 +73,7 @@ class ScheduleService:
             # Reset lại cờ nhắc nhở khi dời giờ
             schedule.is_reminded_30m = False
             schedule.is_reminded_10m = False
+            schedule.is_reminded_ontime = False
             schedule.is_overdue_alerted = False
 
         # Chuyển trạng thái Post sang SCHEDULED theo Post State Machine (SDD 3.3)
