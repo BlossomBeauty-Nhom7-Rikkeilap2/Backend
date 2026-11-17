@@ -12,6 +12,7 @@ class Schedule(Base):
     remind_before_minutes = Column(Integer, default=30, nullable=False)
     is_reminded_30m = Column(Boolean, default=False, nullable=False)
     is_reminded_10m = Column(Boolean, default=False, nullable=False)
+    is_reminded_ontime = Column(Boolean, default=False, nullable=False)
     is_overdue_alerted = Column(Boolean, default=False, nullable=False)
     schedule_status = Column(Enum("ACTIVE", "COMPLETED", "CANCELLED"), default="ACTIVE", nullable=False, index=True)
     scheduled_by = Column(Integer, ForeignKey("users.user_id"), nullable=False)

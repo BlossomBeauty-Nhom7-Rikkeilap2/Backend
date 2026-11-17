@@ -105,6 +105,7 @@ CREATE TABLE IF NOT EXISTS schedules (
     remind_before_minutes INT NOT NULL DEFAULT 30,
     is_reminded_30m BOOLEAN NOT NULL DEFAULT FALSE,
     is_reminded_10m BOOLEAN NOT NULL DEFAULT FALSE,
+    is_reminded_ontime BOOLEAN NOT NULL DEFAULT FALSE,
     is_overdue_alerted BOOLEAN NOT NULL DEFAULT FALSE,
     schedule_status ENUM('ACTIVE', 'COMPLETED', 'CANCELLED') NOT NULL DEFAULT 'ACTIVE',
     scheduled_by INT NOT NULL,
