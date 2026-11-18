@@ -49,7 +49,7 @@ def seed_database(db):
     platforms_data = [
         {"platform_id": 1, "platform_code": "FACEBOOK", "platform_name": "Facebook Fanpage", "color_hex": "#1877F2", "channel_url": "https://facebook.com/korean_cosmetics"},
         {"platform_id": 2, "platform_code": "INSTAGRAM", "platform_name": "Instagram Business", "color_hex": "#E1306C", "channel_url": "https://instagram.com/korean_cosmetics"},
-        {"platform_id": 3, "platform_code": "THREADS", "platform_name": "Threads Official", "color_hex": "#000000", "channel_url": "https://www.threads.net/@korean_cosmetics"},
+        {"platform_id": 3, "platform_code": "THREADS", "platform_name": "Threads Official", "color_hex": "#000000", "channel_url": "https://www.threads.net/@korean_cosmetics", "oauth_config": {"app_id": "2206691199880753", "api_base": "https://graph.threads.net", "api_version": "v1.0"}},
     ]
     for p_item in platforms_data:
         existing_p = db.query(Platform).filter(Platform.platform_id == p_item["platform_id"]).first()
@@ -69,6 +69,8 @@ def seed_database(db):
             existing_p.platform_name = p_item["platform_name"]
             existing_p.color_hex = p_item["color_hex"]
             existing_p.channel_url = p_item["channel_url"]
+            if "oauth_config" in p_item:
+                existing_p.oauth_config = p_item["oauth_config"]
             existing_p.is_active = True
     db.commit()
 

@@ -10,6 +10,7 @@ from app.models.notification import Notification
 from app.models.user import User
 from app.models.platform import Platform
 from app.services.facebook_service import FacebookGraphService
+from app.services.threads_service import ThreadsApiService
 from app.core.websocket import manager as ws_manager
 from app.config import settings
 
@@ -119,11 +120,41 @@ class AutoPublishService:
             else:
                 published_url = f"https://www.instagram.com/p/blossom_{post.post_id}_{int(now.timestamp())}/"
 
-        # 3. TIKTOK & OTHER
+        # 3. THREADS
+        elif "THREADS" in platform_code:
+            th_user_id = settings.THREADS_USER_ID
+            th_token = settings.THREADS_ACCESS_TOKEN
+            if platform and platform.oauth_config and isinstance(platform.oauth_config, dict):
+                th_user_id = platform.oauth_config.get("user_id") or th_user_id
+                th_token = platform.oauth_config.get("access_token") or th_token
+
+            m_type = "IMAGE" if (media_url and post.media_type == "IMAGE") else ("VIDEO" if (media_url and post.media_type == "VIDEO") else "TEXT")
+
+            if th_user_id and th_token:
+                try:
+                    th_res = ThreadsApiService.publish_threads_post(
+                        user_id=th_user_id,
+                        access_token=th_token,
+                        text=caption,
+                        media_url=media_url,
+                        media_type=m_type
+                    )
+                    api_response = th_res
+                    if th_res.get("success"):
+                        published_url = th_res.get("permalink") or f"https://www.threads.net/t/{th_res.get('threads_post_id')}"
+                    else:
+                        published_url = f"https://www.threads.net/@blossom_cosmetics/post/auto_{post.post_id}"
+                except Exception as e:
+                    logger.error(f"Loi khi goi Threads API: {e}")
+                    published_url = f"https://www.threads.net/@blossom_cosmetics/post/auto_{post.post_id}_{int(now.timestamp())}"
+            else:
+                published_url = f"https://www.threads.net/@blossom_cosmetics/post/auto_{post.post_id}_{int(now.timestamp())}"
+
+        # 4. TIKTOK & OTHER
         else:
             published_url = f"https://www.tiktok.com/@blossombeautystore/video/{post.post_id}{int(now.timestamp())}"
 
-        # CẬP NHẬT TRẠNG THÁI POST VÀ SCHEDULE
+        # CAP NHAT TRANG THAI POST VA SCHEDULE
         post.status = "PUBLISHED"
         post.published_at = now
         post.published_url = published_url
@@ -132,13 +163,13 @@ class AutoPublishService:
         if sched:
             sched.schedule_status = "COMPLETED"
 
-        # GỬI THÔNG BÁO CHO TÁC GIẢ VÀ QUẢN LÝ
+        # GUI THONG BAO CHO TAC GIA VA QUAN LY
         notif_msg = f"Bài viết '{post.title}' đã được hệ thống tự động xuất bản 100% lên {platform_name} vào lúc {now.strftime('%H:%M %d/%m/%Y')}!"
         author_notif = Notification(
             recipient_id=post.author_id,
             post_id=post.post_id,
             notification_type="SCHEDULE_REMINDER",
-            title="Tự động xuất bản thành công! 🎉",
+            title="Tự động xuất bản thành công!",
             message=notif_msg
         )
         db.add(author_notif)

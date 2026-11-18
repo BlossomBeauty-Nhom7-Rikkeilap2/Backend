@@ -1,4 +1,5 @@
 from typing import Dict, Any, Optional
+from datetime import datetime
 from fastapi import APIRouter, Depends, Query, Body, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -9,9 +10,10 @@ from app.models.post import Post
 from app.schemas.analytics import PostStatisticCreate, PostStatisticResponse
 from app.services.facebook_service import FacebookGraphService
 from app.services.tiktok_service import TikTokApiService
+from app.services.threads_service import ThreadsApiService
 from app.services.analytics_service import AnalyticsService
 
-router = APIRouter(prefix="/social", tags=["Social Media Integration (Facebook, Instagram & TikTok)"])
+router = APIRouter(prefix="/social", tags=["Social Media Integration (Facebook, Instagram, Threads & TikTok)"])
 
 # ==============================================================================
 # FACEBOOK & INSTAGRAM GRAPH API INTEGRATION ENDPOINTS
@@ -194,6 +196,171 @@ def sync_tiktok_video_statistics(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Không thể lấy dữ liệu từ TikTok: {metrics.get('error', 'Unknown error')}"
+        )
+
+    stat_in = PostStatisticCreate(
+        reach_count=metrics["reach_count"],
+        view_count=metrics["view_count"],
+        like_count=metrics["like_count"],
+        comment_count=metrics["comment_count"],
+        share_count=metrics["share_count"],
+        source_type="API",
+        milestone=milestone
+    )
+    return AnalyticsService.record_statistics(db, post_id, stat_in, current_user)
+
+# ==============================================================================
+# THREADS API INTEGRATION ENDPOINTS (Meta Threads Graph API v1.0)
+# ==============================================================================
+
+@router.get(
+    "/threads/login-url",
+    summary="Lay URL dang nhap Meta Threads OAuth 2.0",
+    description="Tao duong dan xac thuc OAuth voi Threads de cap quyen dang bai va truy van chi so tuong tac."
+)
+def get_threads_login_url(
+    redirect_uri: str = Query("http://localhost:5500/oauth/threads/callback", description="Dia chi callback cua Frontend"),
+    current_user: User = Depends(get_current_user)
+):
+    url = ThreadsApiService.get_authorization_url(redirect_uri=redirect_uri, state=str(current_user.user_id))
+    return {
+        "oauth_url": url,
+        "redirect_uri": redirect_uri
+    }
+
+@router.post(
+    "/threads/exchange-token",
+    summary="Doi ma Code lay Threads Long-lived Access Token (60 ngay)",
+    description="Nhan authorization code tu frontend sau khi nguoi dung dang nhap Threads va doi lay Token dai han 60 ngay."
+)
+def exchange_threads_code(
+    code: str = Body(..., embed=True),
+    redirect_uri: str = Body("http://localhost:5500/oauth/threads/callback", embed=True),
+    current_user: User = Depends(get_current_user)
+):
+    token_data = ThreadsApiService.exchange_code_for_token(code, redirect_uri)
+    if not token_data.get("success"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Loi xac thuc voi Threads API: {token_data.get('error', 'Unknown error')}"
+        )
+    return token_data
+
+@router.post(
+    "/threads/refresh-token",
+    summary="Lam moi Threads Long-lived Access Token",
+    description="Lam moi Access Token truoc khi het han 60 ngay."
+)
+def refresh_threads_token(
+    access_token: str = Body(..., embed=True),
+    current_user: User = Depends(get_current_user)
+):
+    ref_data = ThreadsApiService.refresh_access_token(access_token)
+    if not ref_data.get("success"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Khong the lam moi token Threads: {ref_data.get('error', 'Unknown error')}"
+        )
+    return ref_data
+
+@router.get(
+    "/threads/profile",
+    summary="Lay thong tin ho so tai khoan Threads",
+    description="Truy van thong tin nguoi dung Threads bao gom ID, ten dang nhap va anh dai dien."
+)
+def get_threads_profile(
+    access_token: str = Query(..., description="Threads Access Token"),
+    current_user: User = Depends(get_current_user)
+):
+    profile_data = ThreadsApiService.get_user_profile(access_token)
+    if not profile_data.get("success"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Khong the lay thong tin ho so Threads: {profile_data.get('error', 'Unknown error')}"
+        )
+    return profile_data
+
+@router.post(
+    "/posts/{post_id}/publish-threads",
+    summary="Xuat ban bai viet len kenh Threads (FR-13)",
+    description="Goi Threads API tao Media Container va dang truc tiep len tai khoan Threads."
+)
+def publish_to_threads(
+    post_id: int,
+    user_id: str = Body(..., embed=True, description="Threads User ID cua tai khoan"),
+    access_token: str = Body(..., embed=True, description="Threads User Access Token"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    post = db.query(Post).filter(Post.post_id == post_id, Post.deleted_at.is_(None)).first()
+    if not post:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Khong tim thay bai viet")
+
+    caption = (post.caption or post.title or "").strip()
+    if post.hashtags:
+        caption += f"\n\n{post.hashtags}"
+
+    import json
+    media_url = None
+    if post.media_files:
+        try:
+            files = json.loads(post.media_files) if isinstance(post.media_files, str) else post.media_files
+            if isinstance(files, list) and len(files) > 0:
+                media_url = files[0]
+        except Exception:
+            media_url = None
+
+    res = ThreadsApiService.publish_threads_post(
+        user_id=user_id,
+        access_token=access_token,
+        text=caption,
+        media_url=media_url,
+        media_type=post.media_type
+    )
+
+    if not res.get("success"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Khong the dang bai len Threads: {res.get('error', 'Unknown error')}"
+        )
+
+    # Cap nhat post sang PUBLISHED
+    now = datetime.now()
+    post.status = "PUBLISHED"
+    post.published_at = now
+    post.published_url = res.get("permalink") or f"https://www.threads.net/t/{res.get('threads_post_id')}"
+    db.commit()
+
+    return {
+        "success": True,
+        "post_id": post.post_id,
+        "threads_post_id": res.get("threads_post_id"),
+        "published_url": post.published_url
+    }
+
+@router.post(
+    "/posts/{post_id}/sync-threads",
+    response_model=PostStatisticResponse,
+    summary="Tu dong dong bo so lieu tu Threads API (FR-14 & BR-08)",
+    description="Goi Threads Insights API de lay luot xem, thich, tra loi, dang lai va luu vao CSDL voi source_type='API'."
+)
+def sync_threads_statistics(
+    post_id: int,
+    threads_media_id: str = Body(..., embed=True, description="ID bai dang tren Threads"),
+    access_token: str = Body(..., embed=True, description="Threads Access Token"),
+    milestone: Optional[str] = Body(None, embed=True, description="Moc thoi gian (24H, 7D, 30D, CUSTOM)"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    post = db.query(Post).filter(Post.post_id == post_id, Post.deleted_at.is_(None)).first()
+    if not post:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Khong tim thay bai viet")
+
+    metrics = ThreadsApiService.get_threads_insights(threads_media_id, access_token)
+    if not metrics.get("success"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Khong the lay du lieu tu Threads: {metrics.get('error', 'Unknown error')}"
         )
 
     stat_in = PostStatisticCreate(

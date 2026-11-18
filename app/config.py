@@ -48,6 +48,14 @@ class Settings(BaseSettings):
     TIKTOK_CLIENT_KEY: str = ""
     TIKTOK_CLIENT_SECRET: str = ""
 
+    # Threads APIs (Meta Threads Graph API)
+    THREADS_APP_ID: str = "2206691199880753"
+    THREADS_APP_SECRET: str = "ea4c14c69e932225fc491488ba321366"
+    THREADS_API_VERSION: str = "v1.0"
+    THREADS_API_BASE: str = "https://graph.threads.net"
+    THREADS_USER_ID: str = ""
+    THREADS_ACCESS_TOKEN: str = ""
+
     @property
     def tiktok_key(self) -> str:
         return self.TIKTOK_CLIENT_KEY or self.TIKTOK_APP_ID
