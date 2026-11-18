@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Blossom - FR-03 Quản lý tài khoản &amp; phân quyền (T06A65F)</title>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --pink: #cc618a;
+            --pink-soft: #f9dfe9;
+            --pink-bg: #fff8fa;
+            --pink-line: #f2dfe7;
+            --text: #574b50;
+            --muted: #a4989d;
+            --green: #69a68e;
+            --green-bg: #ebf6ef;
+            --red: #d64545;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--pink-bg);
+            color: var(--text);
+            padding: 28px 32px;
+        }
+        .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 22px; }
+        h1 { font-family: 'Playfair Display', serif; font-weight: 400; font-size: 30px; }
+        .sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+        .btn-primary {
+            background: var(--pink); color: #fff; border: none; border-radius: 6px;
+            padding: 11px 18px; font-size: 13px; font-weight: 600; cursor: pointer;
+        }
+        .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 22px; }
+        .metric-card {
+            background: #fff; border: 1px solid var(--pink-line); border-radius: 12px;
+            padding: 18px; display: flex; flex-direction: column; gap: 4px;
+        }
+        .metric-card strong { font-size: 23px; color: var(--text); }
+        .metric-card span { font-size: 11px; color: var(--muted); }
+        .grid { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; }
+        .card { background: #fff; border: 1px solid var(--pink-line); border-radius: 14px; padding: 18px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 12px; }
+        th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--pink-line); }
+        th { font-size: 10px; color: var(--muted); text-transform: uppercase; }
+        .badge { padding: 4px 10px; border-radius: 100px; font-size: 11px; }
+        .badge.active { background: var(--green-bg); color: var(--green); }
+        .badge.locked { background: var(--pink-soft); color: var(--pink); }
+        .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+        .field label { font-size: 12px; font-weight: 500; }
+        .field input, .field select {
+            height: 40px; padding: 0 12px; border: 1px solid var(--pink-line); border-radius: 6px;
+        }
+        .error { color: var(--red); font-size: 11px; margin-top: 4px; }
+    </style>
+</head>
+<body>
+    <div class="header-row">
+        <div>
+            <small style="color:var(--pink);font-weight:600;">FR-03 · QUẢN LÝ TÀI KHOẢN VÀ PHÂN QUYỀN (T06A65F)</small>
+            <h1>Tài khoản &amp; phân quyền</h1>
+            <p class="sub">Kết nối đội ngũ, trao đúng quyền (Staff / Manager), mã hóa mật khẩu Bcrypt và bảo vệ nội dung của bạn.</p>
+        </div>
+    </div>
+
+    <div class="metrics">
+        <div class="metric-card"><strong id="totalCount">5</strong><span>Tổng tài khoản</span></div>
+        <div class="metric-card"><strong id="activeCount">4</strong><span>Đang hoạt động</span></div>
+        <div class="metric-card"><strong id="lockedCount">1</strong><span>Đã khóa</span></div>
+        <div class="metric-card"><strong>02</strong><span>Vai trò RBAC (Manager / Staff)</span></div>
+    </div>
+
+    <div class="grid">
+        <div class="card">
+            <h3>Danh sách tài khoản</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Họ và tên</th>
+                        <th>Email</th>
+                        <th>Vai trò</th>
+                        <th>Trạng thái</th>
+                        <th>Thao tác</th>
+                    </tr>
+                </thead>
+                <tbody id="userTableBody"></tbody>
+            </table>
+        </div>
+
+        <div class="card">
+            <h3 style="margin-bottom:12px;">Thêm / Cập nhật tài khoản</h3>
+            <form id="userForm" novalidate>
+                <div class="field">
+                    <label>Họ và tên *</label>
+                    <input type="text" id="fullName" placeholder="VD: Trần Ngọc Mai" required>
+                </div>
+                <div class="field">
+                    <label>Email công việc (Unique) *</label>
+                    <input type="email" id="email" placeholder="ngocmai@blossom.vn" required>
+                </div>
+                <div class="field">
+                    <label>Vai trò phân quyền *</label>
+                    <select id="roleCode">
+                        <option value="STAFF">Marketing Staff (Nhân viên)</option>
+                        <option value="MANAGER">Marketing Manager (Quản lý)</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label>Mật khẩu khởi tạo (≥ 8 ký tự, Hoa, Thường, Số) *</label>
+                    <input type="password" id="password" placeholder="Blossom@2026" required>
+                </div>
+                <p class="error" id="formError"></p>
+                <button type="submit" class="btn-primary" style="width:100%;margin-top:8px;">Lưu tài khoản</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const users = [
+            { id: 1, full_name: "Nguyễn Minh Anh", email: "minhanh@blossom.vn", role: "MANAGER", status: "ACTIVE" },
+            { id: 2, full_name: "Trần Ngọc Mai", email: "ngocmai@blossom.vn", role: "MANAGER", status: "ACTIVE" },
+            { id: 3, full_name: "Lê Thu Hương", email: "thuhuong@blossom.vn", role: "STAFF", status: "ACTIVE" },
+            { id: 4, full_name: "Phạm Khánh Linh", email: "khanhlinh@blossom.vn", role: "STAFF", status: "ACTIVE" },
+            { id: 5, full_name: "Đỗ Hoàng Yến", email: "hoangyen@blossom.vn", role: "STAFF", status: "LOCKED" }
+        ];
+
+        function validatePassword(pw) {
+            return pw && pw.length >= 8 && /[A-Z]/.test(pw) && /[a-z]/.test(pw) && /[0-9]/.test(pw);
+        }
+
+        function render() {
+            document.getElementById("totalCount").textContent = String(users.length).padStart(2, "0");
+            document.getElementById("activeCount").textContent = String(users.filter(u => u.status === "ACTIVE").length).padStart(2, "0");
+            document.getElementById("lockedCount").textContent = String(users.filter(u => u.status !== "ACTIVE").length).padStart(2, "0");
+
+            document.getElementById("userTableBody").innerHTML = users.map(u => `
+                <tr>
+                    <td><b>${u.full_name}</b></td>
+                    <td>${u.email}</td>
+                    <td>${u.role}</td>
+                    <td><span class="badge ${u.status === 'ACTIVE' ? 'active' : 'locked'}">${u.status === 'ACTIVE' ? 'Hoạt động' : 'Đã khóa'}</span></td>
+                    <td>
+                        <button onclick="toggleLock(${u.id})">${u.status === 'ACTIVE' ? 'Khóa' : 'Mở khóa'}</button>
+                        <button onclick="toggleRole(${u.id})">Đổi vai</button>
+                    </td>
+                </tr>
+            `).join("");
+        }
+
+        window.toggleLock = function(id) {
+            const u = users.find(x => x.id === id);
+            if (u) { u.status = u.status === "ACTIVE" ? "LOCKED" : "ACTIVE"; render(); }
+        };
+
+        window.toggleRole = function(id) {
+            const u = users.find(x => x.id === id);
+            if (u) { u.role = u.role === "MANAGER" ? "STAFF" : "MANAGER"; render(); }
+        };
+
+        document.getElementById("userForm").addEventListener("submit", function(e) {
+            e.preventDefault();
+            const errEl = document.getElementById("formError");
+            errEl.textContent = "";
+            const fullName = document.getElementById("fullName").value.trim();
+            const email = document.getElementById("email").value.trim().toLowerCase();
+            const role = document.getElementById("roleCode").value;
+            const pw = document.getElementById("password").value;
+
+            if (users.some(u => u.email.toLowerCase() === email)) {
+                errEl.textContent = "[ERR-01] Email này đã được sử dụng";
+                return;
+            }
+            if (!validatePassword(pw)) {
+                errEl.textContent = "[ERR-02] Mật khẩu phải có tối thiểu 8 ký tự, bao gồm chữ hoa, chữ thường và chữ số";
+                return;
+            }
+            users.push({ id: users.length + 1, full_name: fullName, email: email, role: role, status: "ACTIVE" });
+            this.reset();
+            render();
+        });
+
+        render();
+    </script>
+</body>
+</html>
