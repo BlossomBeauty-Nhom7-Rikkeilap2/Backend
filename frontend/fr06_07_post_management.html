@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Blossom - FR-06/07 Xóa mềm &amp; Danh sách bài viết (T06A662)</title>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --pink: #cc618a;
+            --pink-soft: #f9dfe9;
+            --pink-bg: #fff8fa;
+            --pink-line: #f2dfe7;
+            --text: #574b50;
+            --muted: #a4989d;
+            --green: #69a68e;
+            --green-bg: #ebf6ef;
+            --red: #c75c78;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Inter', sans-serif; background: var(--pink-bg); color: var(--text); padding: 28px 32px; }
+        .top-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        h1 { font-family: 'Playfair Display', serif; font-weight: 400; font-size: 30px; }
+        .card { background: #fff; border: 1px solid var(--pink-line); border-radius: 16px; padding: 20px; }
+        .filters { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 1fr; gap: 12px; margin-bottom: 18px; }
+        .filters input, .filters select { height: 42px; padding: 0 12px; border: 1px solid var(--pink-line); border-radius: 6px; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th, td { text-align: left; padding: 14px 12px; border-bottom: 1px solid var(--pink-line); }
+        th { background: var(--pink-bg); font-size: 10px; color: var(--muted); text-transform: uppercase; }
+        .badge { padding: 4px 10px; border-radius: 100px; font-size: 11px; }
+        .btn-del { color: var(--red); background: none; border: 1px solid var(--pink-line); border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <div class="top-row">
+        <div>
+            <small style="color:var(--pink);font-weight:600;">FR-06/07 · XÓA MỀM &amp; DANH SÁCH BÀI VIẾT (T06A662)</small>
+            <h1>Quản lý bài viết</h1>
+        </div>
+        <span id="latencyBadge" style="font-size:12px;color:var(--green);">⚡ Phản hồi: 2.1 ms (&lt; 2 giây)</span>
+    </div>
+
+    <div class="card">
+        <div class="filters">
+            <input type="text" id="qSearch" placeholder="Tìm theo tiêu đề, mã bài viết...">
+            <select id="qPlatform">
+                <option value="">Tất cả nền tảng</option>
+                <option value="Facebook">Facebook</option>
+                <option value="Instagram">Instagram</option>
+                <option value="TikTok">TikTok</option>
+            </select>
+            <select id="qStatus">
+                <option value="">Tất cả trạng thái</option>
+                <option value="DRAFT">Bản nháp (Draft)</option>
+                <option value="REJECTED">Bị từ chối (Rejected)</option>
+                <option value="PENDING_APPROVAL">Chờ duyệt</option>
+                <option value="PUBLISHED">Đã xuất bản</option>
+            </select>
+            <select id="qAuthor">
+                <option value="">Tất cả nhân viên</option>
+                <option value="Nguyễn Hà Linh">Nguyễn Hà Linh</option>
+                <option value="Trần Ngọc Mai">Trần Ngọc Mai</option>
+            </select>
+            <input type="date" id="qDate">
+        </div>
+        <table>
+            <thead>
+                <tr><th>Bài viết</th><th>Tác giả</th><th>Trạng thái</th><th>Lịch đăng</th><th>Thao tác</th></tr>
+            </thead>
+            <tbody id="rows"></tbody>
+        </table>
+    </div>
+</body>
+</html>
