@@ -144,6 +144,7 @@ CREATE TABLE IF NOT EXISTS post_statistics (
     comment_count INT UNSIGNED NOT NULL DEFAULT 0,
     share_count INT UNSIGNED NOT NULL DEFAULT 0,
     source_type ENUM('MANUAL', 'API') NOT NULL DEFAULT 'MANUAL',
+    milestone ENUM('24H', '7D', '30D', 'CUSTOM') NULL,
     updated_by INT NULL,
     recorded_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_stats_post FOREIGN KEY (post_id) REFERENCES posts(post_id) ON DELETE RESTRICT,
