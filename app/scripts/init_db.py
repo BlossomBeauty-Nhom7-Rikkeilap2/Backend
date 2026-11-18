@@ -235,7 +235,8 @@ def seed_database(db):
 
     # 5. Seed Post Statistics & Notifications
     print("[5/5] Khởi tạo số liệu thống kê (Statistics) & Thông báo (Notifications)...")
-    if not db.query(PostStatistic).filter(PostStatistic.post_id == 4).first():
+    stat4 = db.query(PostStatistic).filter(PostStatistic.post_id == 4).first()
+    if not stat4:
         db.add(PostStatistic(
             post_id=4,
             reach_count=15800,
@@ -244,10 +245,15 @@ def seed_database(db):
             comment_count=120,
             share_count=54,
             source_type="API",
+            milestone="7D",
             updated_by=2
         ))
+    else:
+        if not stat4.milestone:
+            stat4.milestone = "7D"
 
-    if not db.query(PostStatistic).filter(PostStatistic.post_id == 5).first():
+    stat5 = db.query(PostStatistic).filter(PostStatistic.post_id == 5).first()
+    if not stat5:
         db.add(PostStatistic(
             post_id=5,
             reach_count=6200,
@@ -256,8 +262,12 @@ def seed_database(db):
             comment_count=45,
             share_count=22,
             source_type="MANUAL",
+            milestone="24H",
             updated_by=5
         ))
+    else:
+        if not stat5.milestone:
+            stat5.milestone = "24H"
 
     # Notifications mẫu
     sample_notifs = [

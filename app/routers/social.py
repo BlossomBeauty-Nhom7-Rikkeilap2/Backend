@@ -72,6 +72,7 @@ def sync_facebook_post_statistics(
     post_id: int,
     fb_post_id: str = Body(..., embed=True, description="ID bài đăng trên Facebook (dạng {page_id}_{post_id})"),
     access_token: str = Body(..., embed=True, description="Page Access Token hoặc User Access Token"),
+    milestone: Optional[str] = Body(None, embed=True, description="Mốc thời gian (24H, 7D, 30D, CUSTOM)"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -92,7 +93,8 @@ def sync_facebook_post_statistics(
         like_count=metrics["like_count"],
         comment_count=metrics["comment_count"],
         share_count=metrics["share_count"],
-        source_type="API"
+        source_type="API",
+        milestone=milestone
     )
     return AnalyticsService.record_statistics(db, post_id, stat_in, current_user)
 
@@ -106,6 +108,7 @@ def sync_instagram_post_statistics(
     post_id: int,
     ig_media_id: str = Body(..., embed=True, description="ID bài đăng (Media ID) trên Instagram"),
     access_token: str = Body(..., embed=True, description="Page Access Token của Trang liên kết với tài khoản Instagram"),
+    milestone: Optional[str] = Body(None, embed=True, description="Mốc thời gian (24H, 7D, 30D, CUSTOM)"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -126,7 +129,8 @@ def sync_instagram_post_statistics(
         like_count=metrics["like_count"],
         comment_count=metrics["comment_count"],
         share_count=metrics["share_count"],
-        source_type="API"
+        source_type="API",
+        milestone=milestone
     )
     return AnalyticsService.record_statistics(db, post_id, stat_in, current_user)
 
@@ -177,6 +181,7 @@ def sync_tiktok_video_statistics(
     post_id: int,
     video_id: str = Body(..., embed=True, description="ID của Video trên kênh TikTok"),
     access_token: str = Body(..., embed=True, description="User Access Token của tài khoản TikTok liên kết"),
+    milestone: Optional[str] = Body(None, embed=True, description="Mốc thời gian (24H, 7D, 30D, CUSTOM)"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -197,6 +202,23 @@ def sync_tiktok_video_statistics(
         like_count=metrics["like_count"],
         comment_count=metrics["comment_count"],
         share_count=metrics["share_count"],
-        source_type="API"
+        source_type="API",
+        milestone=milestone
     )
     return AnalyticsService.record_statistics(db, post_id, stat_in, current_user)
+
+@router.post(
+    "/posts/{post_id}/sync-mock",
+    response_model=PostStatisticResponse,
+    summary="Đồng bộ số liệu mô phỏng qua Mock API (FR-14 & Gợi ý thưởng +1)",
+    description="Mô phỏng đồng bộ chỉ số đo lường API cho bài viết Facebook, Instagram, Threads hoặc TikTok mà không cần Token thật."
+)
+def sync_social_mock_statistics(
+    post_id: int,
+    milestone: Optional[str] = Body(None, embed=True, description="Mốc thời gian (24H, 7D, 30D, CUSTOM)"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    from app.schemas.analytics import MockSyncRequest
+    mock_req = MockSyncRequest(milestone=milestone) if milestone else None
+    return AnalyticsService.sync_mock_statistics(db, post_id, current_user, mock_req)
