@@ -1,9 +1,28 @@
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Any, Dict
+from typing import Optional, Any, Dict, Tuple
+import re
 import bcrypt
 import jwt
 from jwt.exceptions import PyJWTError
 from app.config import settings
+
+def validate_password_complexity(password: str) -> Tuple[bool, str]:
+    """
+    Kiểm tra độ phức tạp của mật khẩu theo FR-03 (ERR-02, BR-01/BR-02):
+    - Tối thiểu 8 ký tự
+    - Có ít nhất 1 chữ cái viết hoa (A-Z)
+    - Có ít nhất 1 chữ cái viết thường (a-z)
+    - Có ít nhất 1 chữ số (0-9)
+    """
+    if not password or len(password) < 8:
+        return False, "Mật khẩu phải có tối thiểu 8 ký tự (gồm chữ hoa, chữ thường và chữ số)"
+    if not re.search(r"[A-Z]", password):
+        return False, "Mật khẩu thiếu chữ hoa (phải có tối thiểu 8 ký tự, gồm chữ hoa, chữ thường và chữ số)"
+    if not re.search(r"[a-z]", password):
+        return False, "Mật khẩu thiếu chữ thường (phải có tối thiểu 8 ký tự, gồm chữ hoa, chữ thường và chữ số)"
+    if not re.search(r"[0-9]", password):
+        return False, "Mật khẩu thiếu chữ số (phải có tối thiểu 8 ký tự, gồm chữ hoa, chữ thường và chữ số)"
+    return True, "Hợp lệ"
 
 def hash_password(password: str) -> str:
     """Mã hóa mật khẩu bằng thuật toán Bcrypt (theo NFR-02 SDD)."""

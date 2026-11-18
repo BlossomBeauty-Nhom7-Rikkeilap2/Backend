@@ -26,11 +26,11 @@ class AuthService:
                 detail="Thông tin đăng nhập không chính xác"
             )
 
-        # 2. Kiểm tra tài khoản bị vô hiệu hóa
-        if user.status == "DEACTIVATED":
+        # 2. Kiểm tra tài khoản bị khóa hoặc vô hiệu hóa (FR-01, FR-03)
+        if user.status in ("DEACTIVATED", "LOCKED"):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Tài khoản đã bị vô hiệu hóa. Vui lòng liên hệ Quản trị viên."
+                detail="Tài khoản đã bị khóa hoặc vô hiệu hóa. Vui lòng liên hệ Quản trị viên."
             )
 
         # 3. Kiểm tra khóa tạm thời do brute-force (locked_until)

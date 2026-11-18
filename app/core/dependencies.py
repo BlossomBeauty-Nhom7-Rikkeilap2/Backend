@@ -65,11 +65,11 @@ def get_current_user(
     if user is None:
         raise credentials_exception
 
-    # Kiểm tra trạng thái tài khoản theo FR-01 & Mục 8.2 SRS
-    if user.status == "DEACTIVATED":
+    # Kiểm tra trạng thái tài khoản theo FR-01, FR-03 & Mục 8.2 SRS
+    if user.status in ("DEACTIVATED", "LOCKED"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Tài khoản đã bị vô hiệu hóa. Vui lòng liên hệ Quản lý."
+            detail="Tài khoản đã bị khóa hoặc vô hiệu hóa. Vui lòng liên hệ Quản lý."
         )
 
     if user.locked_until and user.locked_until > datetime.now():
