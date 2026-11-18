@@ -1,5 +1,5 @@
 from typing import Optional, List, Any
-from datetime import datetime
+from datetime import datetime, date
 from pydantic import BaseModel, Field
 
 class PostCreate(BaseModel):
@@ -36,6 +36,7 @@ class PostResponse(BaseModel):
     status: str
     published_url: Optional[str] = None
     published_at: Optional[datetime] = None
+    deleted_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
 
@@ -44,8 +45,22 @@ class PostResponse(BaseModel):
 
 class PostFilterParams(BaseModel):
     platform_id: Optional[int] = None
+    platform: Optional[str] = None
     status: Optional[str] = None
     author_id: Optional[int] = None
+    author_name: Optional[str] = None
     search: Optional[str] = None
+    planned_date: Optional[date] = None
+    date_from: Optional[datetime] = None
+    date_to: Optional[datetime] = None
+    include_deleted: bool = False
     page: int = 1
     page_size: int = 10
+
+class PaginatedPostResponse(BaseModel):
+    items: List[PostResponse]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+    response_time_ms: float

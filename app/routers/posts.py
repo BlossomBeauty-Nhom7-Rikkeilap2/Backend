@@ -1,11 +1,18 @@
 from typing import List, Optional
+from datetime import datetime, date
 from fastapi import APIRouter, Depends, UploadFile, File, Query, status, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.models.user import User
-from app.schemas.post import PostCreate, PostUpdate, PostResponse, PostFilterParams
+from app.schemas.post import (
+    PostCreate,
+    PostUpdate,
+    PostResponse,
+    PostFilterParams,
+    PaginatedPostResponse,
+)
 from app.services.post_service import PostService
 from app.services.media_service import MediaUploadService
 
@@ -14,14 +21,20 @@ router = APIRouter(prefix="/posts", tags=["MOD-03: Content & Media Management"])
 @router.get(
     "",
     response_model=List[PostResponse],
-    summary="Lấy danh sách bài viết (FR-07)",
-    description="Hỗ trợ lọc theo nền tảng, trạng thái, tác giả và tìm kiếm từ khóa."
+    summary="Lấy danh sách bài viết kèm tìm kiếm, lọc và phân trang (FR-07)",
+    description="Hỗ trợ lọc theo nền tảng, trạng thái, nhân viên (tác giả), ngày đăng, tìm kiếm từ khóa và phân trang (< 2 giây)."
 )
 def get_posts(
-    platform_id: Optional[int] = Query(None),
-    status: Optional[str] = Query(None),
-    author_id: Optional[int] = Query(None),
-    search: Optional[str] = Query(None),
+    platform_id: Optional[int] = Query(None, description="Mã nền tảng (1: Facebook, 2: Instagram, 3: TikTok/Threads)"),
+    platform: Optional[str] = Query(None, description="Tên hoặc mã nền tảng (FACEBOOK, INSTAGRAM, TIKTOK)"),
+    status: Optional[str] = Query(None, description="Trạng thái (DRAFT, PENDING_APPROVAL, REVISION_REQUESTED, REJECTED, APPROVED, SCHEDULED, PUBLISHED)"),
+    author_id: Optional[int] = Query(None, description="Mã nhân viên tạo bài"),
+    author_name: Optional[str] = Query(None, description="Tên nhân viên phụ trách"),
+    planned_date: Optional[date] = Query(None, description="Lọc theo ngày dự kiến đăng (YYYY-MM-DD)"),
+    date_from: Optional[datetime] = Query(None, description="Lọc từ ngày dự kiến đăng"),
+    date_to: Optional[datetime] = Query(None, description="Lọc đến ngày dự kiến đăng"),
+    search: Optional[str] = Query(None, description="Từ khóa tìm kiếm theo tiêu đề, caption, hashtag"),
+    include_deleted: bool = Query(False, description="Bao gồm cả bài đã xóa mềm"),
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
     current_user: User = Depends(get_current_user),
@@ -29,13 +42,56 @@ def get_posts(
 ):
     filter_params = PostFilterParams(
         platform_id=platform_id,
+        platform=platform,
         status=status,
         author_id=author_id,
+        author_name=author_name,
+        planned_date=planned_date,
+        date_from=date_from,
+        date_to=date_to,
         search=search,
+        include_deleted=include_deleted,
         page=page,
         page_size=page_size
     )
     return PostService.get_posts(db, filter_params, current_user)
+
+@router.get(
+    "/paginated",
+    response_model=PaginatedPostResponse,
+    summary="Lấy danh sách bài viết kèm metadata phân trang & thời gian phản hồi (FR-07 & NFR-01)"
+)
+def get_posts_paginated(
+    platform_id: Optional[int] = Query(None),
+    platform: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    author_id: Optional[int] = Query(None),
+    author_name: Optional[str] = Query(None),
+    planned_date: Optional[date] = Query(None),
+    date_from: Optional[datetime] = Query(None),
+    date_to: Optional[datetime] = Query(None),
+    search: Optional[str] = Query(None),
+    include_deleted: bool = Query(False),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    filter_params = PostFilterParams(
+        platform_id=platform_id,
+        platform=platform,
+        status=status,
+        author_id=author_id,
+        author_name=author_name,
+        planned_date=planned_date,
+        date_from=date_from,
+        date_to=date_to,
+        search=search,
+        include_deleted=include_deleted,
+        page=page,
+        page_size=page_size
+    )
+    return PostService.get_posts_paginated(db, filter_params, current_user)
 
 @router.get(
     "/{post_id}",
@@ -80,16 +136,21 @@ def update_post(
 @router.delete(
     "/{post_id}",
     status_code=status.HTTP_200_OK,
-    summary="Xóa mềm bài viết (FR-06)",
-    description="Chỉ cho phép xóa bài viết ở trạng thái DRAFT hoặc REJECTED."
+    summary="Xóa mềm bài viết (FR-06 & BR-06)",
+    description="Chỉ cho phép xóa mềm (cập nhật deleted_at) bài viết ở trạng thái DRAFT hoặc REJECTED."
 )
 def delete_post(
     post_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    PostService.delete_post(db, post_id, current_user)
-    return {"message": "Đã xóa bài viết thành công", "status": "success"}
+    deleted_post = PostService.delete_post(db, post_id, current_user)
+    return {
+        "message": "Đã xóa bài viết thành công",
+        "status": "success",
+        "post_id": deleted_post.post_id,
+        "deleted_at": deleted_post.deleted_at
+    }
 
 @router.post(
     "/upload-media",
