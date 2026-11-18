@@ -14,6 +14,9 @@ class CalendarEventResponse(BaseModel):
     color_hex: str
     scheduled_time: datetime
     schedule_status: str
+    post_status: Optional[str] = "SCHEDULED"
+    has_conflict: bool = False
+    conflict_warning: Optional[str] = None
 
     class Config:
         from_attributes = True
