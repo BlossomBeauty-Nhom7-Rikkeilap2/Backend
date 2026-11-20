@@ -12,6 +12,7 @@ class TrackingService:
     PLATFORM_DOMAINS = {
         "FACEBOOK": ["facebook.com", "fb.com", "fb.watch"],
         "INSTAGRAM": ["instagram.com"],
+        "THREADS": ["threads.net"],
         "TIKTOK": ["tiktok.com"]
     }
 

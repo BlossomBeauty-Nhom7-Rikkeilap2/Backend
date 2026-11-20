@@ -166,6 +166,20 @@ class FacebookGraphService:
             "share_count": shares
         }
 
+    @classmethod
+    def get_facebook_post_info(cls, fb_post_id: str, access_token: str) -> Dict[str, Any]:
+        """Truy van thong tin chi tiet bai viet Facebook tu Graph API."""
+        url = f"{cls.GRAPH_API_BASE}/{cls.get_version()}/{fb_post_id}"
+        params = {
+            "fields": "id,message,created_time,permalink_url,shares,comments.summary(true),reactions.summary(true)",
+            "access_token": access_token
+        }
+        res = requests.get(url, params=params, timeout=10)
+        data = res.json()
+        if "error" in data:
+            return {"success": False, "error": data["error"]}
+        return {"success": True, "data": data}
+
     # --------------------------------------------------------------------------
     # INSTAGRAM API METHODS (DÙNG CHUNG META APP ID VÀ SECRET)
     # --------------------------------------------------------------------------
@@ -274,3 +288,17 @@ class FacebookGraphService:
             "comment_count": comments,
             "share_count": shares
         }
+
+    @classmethod
+    def get_instagram_media_info(cls, ig_media_id: str, access_token: str) -> Dict[str, Any]:
+        """Truy van thong tin chi tiet bai viet Instagram tu Graph API."""
+        url = f"{cls.GRAPH_API_BASE}/{cls.get_version()}/{ig_media_id}"
+        params = {
+            "fields": "id,caption,media_type,media_url,permalink,timestamp,like_count,comments_count",
+            "access_token": access_token
+        }
+        res = requests.get(url, params=params, timeout=10)
+        data = res.json()
+        if "error" in data:
+            return {"success": False, "error": data["error"]}
+        return {"success": True, "data": data}

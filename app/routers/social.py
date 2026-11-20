@@ -7,6 +7,8 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.models.user import User
 from app.models.post import Post
+from app.models.platform import Platform
+from app.config import settings
 from app.schemas.analytics import PostStatisticCreate, PostStatisticResponse
 from app.services.facebook_service import FacebookGraphService
 from app.services.tiktok_service import TikTokApiService
@@ -389,3 +391,118 @@ def sync_social_mock_statistics(
     from app.schemas.analytics import MockSyncRequest
     mock_req = MockSyncRequest(milestone=milestone) if milestone else None
     return AnalyticsService.sync_mock_statistics(db, post_id, current_user, mock_req)
+
+# ==============================================================================
+# POST INFORMATION & REMOTE QUERY ENDPOINTS (FACEBOOK, INSTAGRAM, THREADS)
+# ==============================================================================
+
+@router.get(
+    "/facebook/post-info",
+    summary="Lay thong tin bai viet Facebook truc tiep tu Graph API",
+    description="Truy van thong tin bai viet Facebook bao gom tieu de, noi dung, thoi gian tao, link va tong hop luot tuong tac."
+)
+def get_facebook_post_info_endpoint(
+    fb_post_id: str = Query(..., description="ID bai viet Facebook ({page_id}_{post_id})"),
+    access_token: Optional[str] = Query(None, description="Page Access Token (mac dinh lay tu .env neu khong truyen)"),
+    current_user: User = Depends(get_current_user)
+):
+    token = access_token or settings.FB_PAGE_ACCESS_TOKEN
+    if not token:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Chua cau hinh FB_PAGE_ACCESS_TOKEN")
+    return FacebookGraphService.get_facebook_post_info(fb_post_id, token)
+
+@router.get(
+    "/instagram/post-info",
+    summary="Lay thong tin bai viet Instagram truc tiep tu Graph API",
+    description="Truy van thong tin bai viet Instagram bao gom caption, media_url, permalink, timestamp, like_count, comments_count."
+)
+def get_instagram_post_info_endpoint(
+    ig_media_id: str = Query(..., description="Media ID bai viet Instagram"),
+    access_token: Optional[str] = Query(None, description="Access Token cua Instagram Business"),
+    current_user: User = Depends(get_current_user)
+):
+    token = access_token or settings.IG_ACCESS_TOKEN
+    if not token:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Chua cau hinh IG_ACCESS_TOKEN")
+    return FacebookGraphService.get_instagram_media_info(ig_media_id, token)
+
+@router.get(
+    "/threads/post-info",
+    summary="Lay thong tin bai viet Threads truc tiep tu Graph API",
+    description="Truy van thong tin bai viet Threads bao gom text, media_type, permalink, timestamp, username."
+)
+def get_threads_post_info_endpoint(
+    threads_media_id: str = Query(..., description="Threads Media ID"),
+    access_token: Optional[str] = Query(None, description="Threads Access Token"),
+    current_user: User = Depends(get_current_user)
+):
+    token = access_token or settings.THREADS_ACCESS_TOKEN
+    if not token:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Chua cau hinh THREADS_ACCESS_TOKEN")
+    return ThreadsApiService.get_threads_post_info(threads_media_id, token)
+
+@router.get(
+    "/posts/{post_id}/remote-info",
+    summary="Lay thong tin bai viet tu nen tang xa hoi tuong ung (FB, Instagram, Threads)",
+    description="Tu dong nhan dien nen tang cua bai viet (Facebook, Instagram, Threads) va goi API lay thong tin chi tiet cung chi so tuong tac."
+)
+def get_remote_post_info(
+    post_id: int,
+    remote_post_id: Optional[str] = Query(None, description="ID bai viet tren mang xa hoi (neu can ghi de)"),
+    access_token: Optional[str] = Query(None, description="Access Token tuy chon (neu khong truyen se su dung token he thong)"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    post = db.query(Post).filter(Post.post_id == post_id, Post.deleted_at.is_(None)).first()
+    if not post:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Khong tim thay bai viet")
+
+    platform = db.query(Platform).filter(Platform.platform_id == post.platform_id).first()
+    platform_code = (platform.platform_code if platform else "FACEBOOK").upper()
+
+    target_id = remote_post_id
+    if not target_id and post.published_url:
+        url_parts = post.published_url.rstrip("/").split("/")
+        target_id = url_parts[-1]
+
+    result: Dict[str, Any] = {
+        "post_id": post.post_id,
+        "platform_id": post.platform_id,
+        "platform_code": platform_code,
+        "platform_name": platform.platform_name if platform else "Unknown",
+        "local_post": {
+            "title": post.title,
+            "status": post.status,
+            "published_url": post.published_url,
+            "published_at": post.published_at.isoformat() if post.published_at else None
+        },
+        "remote_target_id": target_id,
+        "remote_post_info": None,
+        "remote_insights": None
+    }
+
+    if "FACEBOOK" in platform_code:
+        token = access_token or settings.FB_PAGE_ACCESS_TOKEN
+        if target_id and token:
+            result["remote_post_info"] = FacebookGraphService.get_facebook_post_info(target_id, token)
+            result["remote_insights"] = FacebookGraphService.get_facebook_post_insights(target_id, token)
+        else:
+            result["message"] = "Chua co target_id hoac access_token Facebook"
+
+    elif "INSTAGRAM" in platform_code:
+        token = access_token or settings.IG_ACCESS_TOKEN
+        if target_id and token:
+            result["remote_post_info"] = FacebookGraphService.get_instagram_media_info(target_id, token)
+            result["remote_insights"] = FacebookGraphService.get_instagram_media_insights(target_id, token)
+        else:
+            result["message"] = "Chua co target_id hoac access_token Instagram"
+
+    elif "THREADS" in platform_code:
+        token = access_token or settings.THREADS_ACCESS_TOKEN
+        if target_id and token:
+            result["remote_post_info"] = ThreadsApiService.get_threads_post_info(target_id, token)
+            result["remote_insights"] = ThreadsApiService.get_threads_insights(target_id, token)
+        else:
+            result["message"] = "Chua co target_id hoac access_token Threads"
+
+    return result

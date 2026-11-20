@@ -241,3 +241,17 @@ class ThreadsApiService:
             "reposts_count": reposts,
             "quotes_count": quotes
         }
+
+    @classmethod
+    def get_threads_post_info(cls, threads_media_id: str, access_token: str) -> Dict[str, Any]:
+        """Truy van thong tin chi tiet bai viet Threads tu Graph API."""
+        url = f"{cls.GRAPH_API_BASE}/{cls.get_version()}/{threads_media_id}"
+        params = {
+            "fields": "id,media_product_type,media_type,text,permalink,timestamp,username",
+            "access_token": access_token
+        }
+        res = requests.get(url, params=params, timeout=10)
+        data = res.json()
+        if "error" in data:
+            return {"success": False, "error": data["error"]}
+        return {"success": True, "data": data}
