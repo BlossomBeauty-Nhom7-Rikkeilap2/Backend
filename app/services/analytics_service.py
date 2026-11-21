@@ -20,7 +20,7 @@ from app.schemas.analytics import PostStatisticUpdate
 DEFAULT_CHANNELS = [
     ("Facebook", "#1877F2"),
     ("Instagram", "#E1306C"),
-    ("TikTok", "#111111"),
+    ("Threads", "#111111"),
 ]
 
 

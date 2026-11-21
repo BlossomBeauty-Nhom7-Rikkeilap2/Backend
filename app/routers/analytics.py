@@ -38,13 +38,13 @@ def update_post_statistics(
     "/dashboard",
     response_model=AnalyticsDashboardResponse,
     summary="Dashboard báo cáo thống kê hiệu quả đa kênh (FR-15 - T06A66D)",
-    description="Tổng hợp KPI, so sánh 3 kênh (Facebook, Instagram, TikTok), xu hướng 12 tháng và bảng xếp hạng Top bài viết theo bộ lọc thời gian/nền tảng/nhân sự."
+    description="Tổng hợp KPI, so sánh 3 kênh (Facebook, Instagram, Threads), xu hướng 12 tháng và bảng xếp hạng Top bài viết theo bộ lọc thời gian/nền tảng/nhân sự."
 )
 def get_analytics_dashboard(
     start_date: Optional[datetime] = Query(None, description="Từ ngày (ISO-8601)"),
     end_date: Optional[datetime] = Query(None, description="Đến ngày (ISO-8601)"),
     platform_id: Optional[int] = Query(None, description="ID nền tảng"),
-    platform: Optional[str] = Query(None, description="Tên nền tảng (Facebook, Instagram, TikTok, ALL)"),
+    platform: Optional[str] = Query(None, description="Tên nền tảng (Facebook, Instagram, Threads, ALL)"),
     author_id: Optional[int] = Query(None, description="ID nhân sự/tác giả"),
     author_name: Optional[str] = Query(None, description="Tên nhân sự/tác giả"),
     current_user: User = Depends(require_manager),

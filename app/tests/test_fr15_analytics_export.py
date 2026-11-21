@@ -26,7 +26,7 @@ class TestFR15AnalyticsAndExport(unittest.TestCase):
     Kiểm thử tự động FR-15: API tổng hợp báo cáo & xuất Excel/CSV/PDF (Task T06A66D)
     Bao phủ:
     - Tổng hợp 4 KPI (Bài xuất bản, Lượt tiếp cận, Tổng tương tác, Tỷ lệ tương tác)
-    - So sánh hiệu quả 3 kênh (Facebook, Instagram, TikTok) & Xu hướng 12 tháng
+    - So sánh hiệu quả 3 kênh (Facebook, Instagram, Threads) & Xu hướng 12 tháng
     - Bảng xếp hạng Top bài viết
     - Bộ lọc theo Thời gian, Nền tảng, Nhân sự
     - Trạng thái không có dữ liệu (ERR-01) & Chặn khoảng thời gian không hợp lệ (ERR-02)
@@ -74,7 +74,7 @@ class TestFR15AnalyticsAndExport(unittest.TestCase):
 
         fb = Platform(platform_id=1, platform_code="FB", platform_name="Facebook", color_hex="#1877F2", is_active=True)
         ig = Platform(platform_id=2, platform_code="IG", platform_name="Instagram", color_hex="#E1306C", is_active=True)
-        tt = Platform(platform_id=3, platform_code="TT", platform_name="TikTok", color_hex="#111111", is_active=True)
+        tt = Platform(platform_id=3, platform_code="TH", platform_name="Threads", color_hex="#111111", is_active=True)
         self.db.add_all([fb, ig, tt])
 
         p1 = Post(
@@ -98,7 +98,7 @@ class TestFR15AnalyticsAndExport(unittest.TestCase):
         p3 = Post(
             post_id=118,
             title="Dịu dàng với làn da, dịu dàng với chính mình",
-            caption="Video TikTok",
+            caption="Video Threads",
             platform_id=3,
             author_id=2,
             status="PUBLISHED",
@@ -127,10 +127,10 @@ class TestFR15AnalyticsAndExport(unittest.TestCase):
         self.assertIsNone(data["empty_state_message"])
 
         channels = {c["platform_name"]: c for c in data["channel_comparison"]}
-        self.assertTrue({"Facebook", "Instagram", "TikTok"}.issubset(set(channels.keys())))
+        self.assertTrue({"Facebook", "Instagram", "Threads"}.issubset(set(channels.keys())))
         self.assertEqual(channels["Facebook"]["total_engagement"], 1148)
         self.assertEqual(channels["Instagram"]["total_engagement"], 986)
-        self.assertEqual(channels["TikTok"]["total_engagement"], 824)
+        self.assertEqual(channels["Threads"]["total_engagement"], 824)
 
         self.assertEqual(len(data["top_posts"]), 3)
         self.assertEqual(data["top_posts"][0]["post_code"], "BL-0128")
