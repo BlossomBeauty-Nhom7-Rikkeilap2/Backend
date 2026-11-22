@@ -44,6 +44,14 @@ class Settings(BaseSettings):
     IG_ACCOUNT_ID: str = ""
     IG_ACCESS_TOKEN: str = ""
 
+    # Threads API
+    THREADS_APP_ID: str = ""
+    THREADS_APP_SECRET: str = ""
+    THREADS_API_VERSION: str = "v1.0"
+    THREADS_API_BASE: str = "https://graph.threads.net"
+    THREADS_USER_ID: str = ""
+    THREADS_ACCESS_TOKEN: str = ""
+
     # Scheduler & CORS
     SCHEDULER_INTERVAL_SECONDS: int = 60
     CORS_ORIGINS: str = "http://localhost:3000,http://localhost:5173,http://localhost:5500,http://127.0.0.1:3000,http://127.0.0.1:5173,http://127.0.0.1:5500"

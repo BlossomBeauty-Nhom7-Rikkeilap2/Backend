@@ -7,7 +7,7 @@ from app.core.dependencies import get_current_user
 from app.models.user import User
 from app.models.post import Post
 from app.schemas.analytics import PostStatisticCreate, PostStatisticResponse
-from app.services.facebook_service import FacebookGraphService
+from app.services.facebook_service import FacebookGraphService, ThreadsGraphService
 from app.services.analytics_service import AnalyticsService
 
 router = APIRouter(prefix="/social", tags=["Social Media Integration (Facebook, Instagram & Threads)"])
@@ -120,6 +120,42 @@ def sync_instagram_post_statistics(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Không thể lấy dữ liệu từ Instagram: {metrics.get('error', 'Unknown error')}"
+        )
+
+    stat_in = PostStatisticCreate(
+        reach_count=metrics["reach_count"],
+        view_count=metrics["view_count"],
+        like_count=metrics["like_count"],
+        comment_count=metrics["comment_count"],
+        share_count=metrics["share_count"],
+        source_type="API",
+        milestone=milestone
+    )
+    return AnalyticsService.record_statistics(db, post_id, stat_in, current_user)
+
+@router.post(
+    "/posts/{post_id}/sync-threads",
+    response_model=PostStatisticResponse,
+    summary="Tự động đồng bộ số liệu từ Threads Graph API (FR-14 & BR-08)",
+    description="Gọi trực tiếp Threads Graph API để lấy Views, Likes, Replies, Reposts và lưu vào bảng post_statistics với source_type='API'."
+)
+def sync_threads_post_statistics(
+    post_id: int,
+    threads_media_id: str = Body(..., embed=True, description="ID bài đăng trên Threads"),
+    access_token: str = Body(..., embed=True, description="Threads User Access Token"),
+    milestone: Optional[str] = Body(None, embed=True, description="Mốc thời gian (24H, 7D, 30D, CUSTOM)"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    post = db.query(Post).filter(Post.post_id == post_id, Post.deleted_at.is_(None)).first()
+    if not post:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy bài viết")
+
+    metrics = ThreadsGraphService.get_threads_insights(threads_media_id, access_token)
+    if not metrics.get("success"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Không thể lấy dữ liệu từ Threads: {metrics.get('error', 'Unknown error')}"
         )
 
     stat_in = PostStatisticCreate(

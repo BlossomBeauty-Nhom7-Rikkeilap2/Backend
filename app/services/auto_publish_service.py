@@ -9,7 +9,7 @@ from app.models.schedule import Schedule
 from app.models.notification import Notification
 from app.models.user import User
 from app.models.platform import Platform
-from app.services.facebook_service import FacebookGraphService
+from app.services.facebook_service import FacebookGraphService, ThreadsGraphService
 from app.core.websocket import manager as ws_manager
 from app.config import settings
 
@@ -103,25 +103,75 @@ class AutoPublishService:
         elif "INSTAGRAM" in platform_code:
             ig_id = settings.IG_ACCOUNT_ID
             ig_token = settings.IG_ACCESS_TOKEN
-            if ig_id and ig_token and media_url:
-                try:
-                    ig_res = FacebookGraphService.publish_photo_to_instagram(
-                        ig_user_id=ig_id,
-                        access_token=ig_token,
-                        image_url=media_url,
-                        caption=caption
-                    )
-                    api_response = ig_res
-                    published_url = f"https://www.instagram.com/p/auto_{post.post_id}/"
-                except Exception as e:
-                    logger.error(f"Lỗi khi gọi Instagram API: {e}")
-                    published_url = f"https://www.instagram.com/p/blossom_{post.post_id}_{int(now.timestamp())}/"
-            else:
-                published_url = f"https://www.instagram.com/p/blossom_{post.post_id}_{int(now.timestamp())}/"
+            if not ig_id or not ig_token:
+                return {
+                    "success": False,
+                    "error": "Chưa cấu hình IG_ACCOUNT_ID hoặc IG_ACCESS_TOKEN trong file .env để đăng bài lên Instagram thật!"
+                }
+
+            if not media_url:
+                return {
+                    "success": False,
+                    "error": "Instagram yêu cầu bắt buộc phải có ít nhất 1 hình ảnh hoặc video công khai (media_files) để đăng bài."
+                }
+
+            try:
+                logger.info(f"Đang gọi Instagram Content Publishing API cho bài #{post.post_id} lên tài khoản {ig_id}...")
+                ig_res = FacebookGraphService.publish_photo_to_instagram(
+                    ig_user_id=ig_id,
+                    access_token=ig_token,
+                    image_url=media_url,
+                    caption=caption
+                )
+                api_response = ig_res
+                if not ig_res.get("success"):
+                    error_detail = ig_res.get("error", "Lỗi từ Instagram API")
+                    logger.error(f"Instagram Graph API trả về lỗi: {error_detail}")
+                    return {
+                        "success": False,
+                        "error": f"Lỗi Instagram API: {error_detail}"
+                    }
+
+                published_url = ig_res.get("permalink") or f"https://www.instagram.com/p/{ig_res.get('ig_media_id')}/"
+            except Exception as e:
+                logger.error(f"Lỗi kết nối khi gọi Instagram API: {e}")
+                return {
+                    "success": False,
+                    "error": f"Lỗi kết nối mạng khi gọi Instagram API: {str(e)}"
+                }
 
         # 3. THREADS & OTHER
         else:
-            published_url = f"https://www.threads.net/@blossombeautystore/post/{post.post_id}_{int(now.timestamp())}"
+            threads_uid = settings.THREADS_USER_ID
+            threads_token = settings.THREADS_ACCESS_TOKEN
+
+            if threads_uid and threads_token:
+                try:
+                    logger.info(f"Đang gọi Threads Graph API cho bài #{post.post_id} lên tài khoản {threads_uid}...")
+                    th_res = ThreadsGraphService.publish_thread(
+                        threads_user_id=threads_uid,
+                        access_token=threads_token,
+                        text=caption,
+                        image_url=media_url
+                    )
+                    api_response = th_res
+                    if not th_res.get("success"):
+                        error_detail = th_res.get("error", "Lỗi từ Threads API")
+                        logger.error(f"Threads Graph API trả về lỗi: {error_detail}")
+                        return {
+                            "success": False,
+                            "error": f"Lỗi Threads API: {error_detail}"
+                        }
+                    published_url = th_res.get("permalink") or f"https://www.threads.net/post/{th_res.get('threads_media_id')}"
+                except Exception as e:
+                    logger.error(f"Lỗi khi gọi Threads API: {e}")
+                    return {
+                        "success": False,
+                        "error": f"Lỗi kết nối mạng khi gọi Threads API: {str(e)}"
+                    }
+            else:
+                published_url = f"https://www.threads.net/@blossombeautystore/post/{post.post_id}_{int(now.timestamp())}"
+                logger.info(f"Threads API chưa cấu hình token thật, sử dụng URL mô phỏng: {published_url}")
 
         # CẬP NHẬT TRẠNG THÁI POST VÀ SCHEDULE
         post.status = "PUBLISHED"

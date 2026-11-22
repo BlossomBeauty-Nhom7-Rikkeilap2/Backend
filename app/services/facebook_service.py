@@ -193,8 +193,10 @@ class FacebookGraphService:
         """
         Đăng ảnh lên Instagram Business Account (Quy trình 2 bước của Meta):
         Bước 1: Tạo media container
-        Bước 2: Phát hành (publish) container
+        Bước 2: Chờ container xử lý và phát hành (publish)
         """
+        import time
+
         # Bước 1: Tạo container
         create_url = f"{cls.GRAPH_API_BASE}/{cls.get_version()}/{ig_user_id}/media"
         create_payload = {
@@ -202,12 +204,32 @@ class FacebookGraphService:
             "caption": caption,
             "access_token": access_token
         }
-        create_res = requests.post(create_url, data=create_payload, timeout=15)
+        create_res = requests.post(create_url, data=create_payload, timeout=20)
         create_data = create_res.json()
         if "id" not in create_data:
             return {"success": False, "error": create_data.get("error", "Container creation failed")}
 
         creation_id = create_data["id"]
+
+        # Kiểm tra trạng thái container cho đến khi FINISHED
+        max_attempts = 10
+        for _ in range(max_attempts):
+            status_url = f"{cls.GRAPH_API_BASE}/{cls.get_version()}/{creation_id}"
+            try:
+                status_res = requests.get(
+                    status_url,
+                    params={"fields": "status_code", "access_token": access_token},
+                    timeout=10
+                )
+                status_data = status_res.json()
+                code = status_data.get("status_code")
+                if code == "FINISHED":
+                    break
+                elif code == "ERROR":
+                    return {"success": False, "error": f"Instagram container error: {status_data}"}
+            except Exception:
+                pass
+            time.sleep(1.5)
 
         # Bước 2: Publish media
         publish_url = f"{cls.GRAPH_API_BASE}/{cls.get_version()}/{ig_user_id}/media_publish"
@@ -215,12 +237,32 @@ class FacebookGraphService:
             "creation_id": creation_id,
             "access_token": access_token
         }
-        pub_res = requests.post(publish_url, data=publish_payload, timeout=15)
+        pub_res = requests.post(publish_url, data=publish_payload, timeout=20)
         pub_data = pub_res.json()
         if "id" not in pub_data:
             return {"success": False, "error": pub_data.get("error", "Publish failed")}
 
-        return {"success": True, "ig_media_id": pub_data["id"]}
+        ig_media_id = pub_data["id"]
+
+        # Lấy permalink thực tế từ Instagram
+        permalink = None
+        try:
+            perm_url = f"{cls.GRAPH_API_BASE}/{cls.get_version()}/{ig_media_id}"
+            perm_res = requests.get(
+                perm_url,
+                params={"fields": "permalink", "access_token": access_token},
+                timeout=10
+            )
+            perm_data = perm_res.json()
+            permalink = perm_data.get("permalink")
+        except Exception:
+            pass
+
+        return {
+            "success": True,
+            "ig_media_id": ig_media_id,
+            "permalink": permalink or f"https://www.instagram.com/p/{ig_media_id}/"
+        }
 
     @classmethod
     def get_instagram_media_insights(cls, ig_media_id: str, access_token: str) -> Dict[str, Any]:
@@ -273,4 +315,128 @@ class FacebookGraphService:
             "like_count": likes,
             "comment_count": comments,
             "share_count": shares
+        }
+
+
+class ThreadsGraphService:
+    """
+    Dịch vụ tích hợp Meta Threads Graph API.
+    Sử dụng endpoint chính thức https://graph.threads.net/v1.0.
+    """
+    API_BASE = "https://graph.threads.net"
+
+    @classmethod
+    def get_version(cls) -> str:
+        return settings.THREADS_API_VERSION or "v1.0"
+
+    @classmethod
+    def publish_thread(
+        cls,
+        threads_user_id: str,
+        access_token: str,
+        text: str,
+        image_url: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Đăng bài lên Meta Threads:
+        Bước 1: Tạo media container (TEXT hoặc IMAGE)
+        Bước 2: Chờ xử lý và phát hành (publish)
+        """
+        import time
+
+        version = cls.get_version()
+        create_url = f"{cls.API_BASE}/{version}/{threads_user_id}/threads"
+        payload = {
+            "media_type": "IMAGE" if image_url else "TEXT",
+            "text": text,
+            "access_token": access_token
+        }
+        if image_url:
+            payload["image_url"] = image_url
+
+        create_res = requests.post(create_url, data=payload, timeout=20)
+        create_data = create_res.json()
+        if "id" not in create_data:
+            return {"success": False, "error": create_data.get("error", "Threads container creation failed")}
+
+        creation_id = create_data["id"]
+
+        # Chờ container sẵn sàng
+        max_attempts = 10
+        for _ in range(max_attempts):
+            status_url = f"{cls.API_BASE}/{version}/{creation_id}"
+            try:
+                status_res = requests.get(
+                    status_url,
+                    params={"fields": "status,error_message", "access_token": access_token},
+                    timeout=10
+                )
+                status_data = status_res.json()
+                code = status_data.get("status")
+                if code == "FINISHED":
+                    break
+                elif code == "ERROR":
+                    return {"success": False, "error": f"Threads container processing error: {status_data}"}
+            except Exception:
+                pass
+            time.sleep(1.5)
+
+        # Bước 2: Publish
+        pub_url = f"{cls.API_BASE}/{version}/{threads_user_id}/threads_publish"
+        pub_payload = {
+            "creation_id": creation_id,
+            "access_token": access_token
+        }
+        pub_res = requests.post(pub_url, data=pub_payload, timeout=20)
+        pub_data = pub_res.json()
+        if "id" not in pub_data:
+            return {"success": False, "error": pub_data.get("error", "Threads publish failed")}
+
+        threads_media_id = pub_data["id"]
+
+        # Lấy permalink
+        permalink = None
+        try:
+            perm_url = f"{cls.API_BASE}/{version}/{threads_media_id}"
+            perm_res = requests.get(
+                perm_url,
+                params={"fields": "permalink", "access_token": access_token},
+                timeout=10
+            )
+            perm_data = perm_res.json()
+            permalink = perm_data.get("permalink")
+        except Exception:
+            pass
+
+        return {
+            "success": True,
+            "threads_media_id": threads_media_id,
+            "permalink": permalink or f"https://www.threads.net/post/{threads_media_id}"
+        }
+
+    @classmethod
+    def get_threads_insights(cls, threads_media_id: str, access_token: str) -> Dict[str, Any]:
+        """Lấy số liệu thống kê bài đăng Threads."""
+        version = cls.get_version()
+        url = f"{cls.API_BASE}/{version}/{threads_media_id}/insights"
+        params = {
+            "metric": "views,likes,replies,reposts,quotes",
+            "access_token": access_token
+        }
+        res = requests.get(url, params=params, timeout=10)
+        data = res.json()
+        if "error" in data:
+            return {"success": False, "error": data["error"]}
+
+        metrics_map = {}
+        for item in data.get("data", []):
+            metrics_map[item.get("name")] = item.get("values", [{}])[0].get("value", 0)
+
+        return {
+            "success": True,
+            "reach_count": metrics_map.get("views", 0),
+            "view_count": metrics_map.get("views", 0),
+            "like_count": metrics_map.get("likes", 0),
+            "comment_count": metrics_map.get("replies", 0),
+            "share_count": metrics_map.get("reposts", 0) + metrics_map.get("quotes", 0)
         }
