@@ -1,10 +1,12 @@
-from fastapi import APIRouter, Depends, Response, status
+from datetime import datetime
+from fastapi import APIRouter, Depends, Response, status, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
+from app.core.security import verify_password, hash_password
 from app.models.user import User
-from app.schemas.auth import LoginRequest, TokenResponse, UserInfoResponse
+from app.schemas.auth import LoginRequest, TokenResponse, UserInfoResponse, ChangePasswordRequest
 from app.services.auth_service import AuthService
 from app.config import settings
 
@@ -60,3 +62,29 @@ def get_me(current_user: User = Depends(get_current_user)):
         status=current_user.status,
         avatar_url=current_user.avatar_url
     )
+
+@router.post(
+    "/change-password",
+    status_code=status.HTTP_200_OK,
+    summary="Đổi mật khẩu tài khoản (FR-01)",
+    description="Xác thực mật khẩu cũ và cập nhật mật khẩu mới băm Bcrypt."
+)
+def change_password(
+    req: ChangePasswordRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if not verify_password(req.current_password, current_user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Mật khẩu hiện tại không chính xác."
+        )
+    if len(req.new_password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Mật khẩu mới phải có tối thiểu 8 ký tự."
+        )
+    current_user.password_hash = hash_password(req.new_password)
+    current_user.updated_at = datetime.now()
+    db.commit()
+    return {"message": "Đổi mật khẩu thành công", "status": "success"}

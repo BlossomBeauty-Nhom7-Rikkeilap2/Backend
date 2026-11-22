@@ -48,7 +48,7 @@ def get_post(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    return PostService.get_post_by_id(db, post_id)
+    return PostService.get_post_by_id(db, post_id, current_user)
 
 @router.post(
     "",

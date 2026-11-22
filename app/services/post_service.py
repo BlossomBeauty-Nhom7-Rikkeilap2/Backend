@@ -15,13 +15,15 @@ class PostService:
         """Lọc và phân trang bài viết (bỏ qua các bài đã bị xóa mềm)."""
         query = db.query(Post).filter(Post.deleted_at.is_(None))
 
-        # Phân quyền xem: Staff chỉ xem bài của mình hoặc bài đã duyệt (tùy nghiệp vụ)
+        # Phân quyền xem: Staff chỉ xem bài của mình (BR-01 & SDD)
+        if current_user.role and current_user.role.role_code == "STAFF":
+            query = query.filter(Post.author_id == current_user.user_id)
+        elif filter_params.author_id:
+            query = query.filter(Post.author_id == filter_params.author_id)
         if filter_params.platform_id:
             query = query.filter(Post.platform_id == filter_params.platform_id)
         if filter_params.status:
             query = query.filter(Post.status == filter_params.status)
-        if filter_params.author_id:
-            query = query.filter(Post.author_id == filter_params.author_id)
         if filter_params.search:
             search_str = f"%{filter_params.search}%"
             query = query.filter(
@@ -36,10 +38,13 @@ class PostService:
         return query.order_by(Post.created_at.desc()).offset(offset).limit(filter_params.page_size).all()
 
     @staticmethod
-    def get_post_by_id(db: Session, post_id: int) -> Post:
+    def get_post_by_id(db: Session, post_id: int, current_user: Optional[User] = None) -> Post:
         post = db.query(Post).filter(Post.post_id == post_id, Post.deleted_at.is_(None)).first()
         if not post:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy bài viết")
+        if current_user and current_user.role and current_user.role.role_code == "STAFF":
+            if post.author_id != current_user.user_id:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bạn chỉ có thể xem bài viết của chính mình")
         return post
 
     @staticmethod

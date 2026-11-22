@@ -119,9 +119,9 @@ class AutoPublishService:
             else:
                 published_url = f"https://www.instagram.com/p/blossom_{post.post_id}_{int(now.timestamp())}/"
 
-        # 3. TIKTOK & OTHER
+        # 3. THREADS & OTHER
         else:
-            published_url = f"https://www.tiktok.com/@blossombeautystore/video/{post.post_id}{int(now.timestamp())}"
+            published_url = f"https://www.threads.net/@blossombeautystore/post/{post.post_id}_{int(now.timestamp())}"
 
         # CẬP NHẬT TRẠNG THÁI POST VÀ SCHEDULE
         post.status = "PUBLISHED"
@@ -138,7 +138,7 @@ class AutoPublishService:
             recipient_id=post.author_id,
             post_id=post.post_id,
             notification_type="SCHEDULE_REMINDER",
-            title="Tự động xuất bản thành công! 🎉",
+            title="Tự động xuất bản thành công!",
             message=notif_msg
         )
         db.add(author_notif)

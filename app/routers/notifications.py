@@ -31,6 +31,26 @@ def get_notifications(
     )
 
 @router.patch(
+    "/notifications/read-all",
+    summary="Đánh dấu tất cả thông báo đã đọc (FR-12)"
+)
+def mark_all_notifications_as_read(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    now = datetime.now()
+    updated = (
+        db.query(Notification)
+        .filter(
+            Notification.recipient_id == current_user.user_id,
+            Notification.is_read.is_(False)
+        )
+        .update({"is_read": True, "read_at": now}, synchronize_session=False)
+    )
+    db.commit()
+    return {"message": f"Đã đánh dấu {updated} thông báo là đã đọc", "status": "success", "count": updated}
+
+@router.patch(
     "/notifications/{notification_id}/read",
     summary="Đánh dấu thông báo đã đọc (FR-12)"
 )
@@ -51,6 +71,27 @@ def mark_notification_as_read(
     notif.read_at = datetime.now()
     db.commit()
     return {"message": "Đã đánh dấu thông báo là đã đọc", "status": "success"}
+
+@router.delete(
+    "/notifications/{notification_id}",
+    summary="Xóa thông báo người dùng (FR-12)"
+)
+def delete_notification(
+    notification_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    notif = db.query(Notification).filter(
+        Notification.notification_id == notification_id,
+        Notification.recipient_id == current_user.user_id
+    ).first()
+
+    if not notif:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy thông báo")
+
+    db.delete(notif)
+    db.commit()
+    return {"message": "Đã xóa thông báo thành công", "status": "success"}
 
 @router.websocket("/ws/notifications")
 async def websocket_notifications_endpoint(websocket: WebSocket, token: str, db: Session = Depends(get_db)):

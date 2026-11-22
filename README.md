@@ -30,7 +30,7 @@
 
 ## 1. GIỚI THIỆU DỰ ÁN
 
-Hệ thống Quản lý Truyền thông Đa kênh được xây dựng nhằm giải quyết bài toán quản trị tập trung chiến dịch truyền thông trên **3 nền tảng chính: Facebook Fanpage, Instagram Business và TikTok Official**. 
+Hệ thống Quản lý Truyền thông Đa kênh được xây dựng nhằm giải quyết bài toán quản trị tập trung chiến dịch truyền thông trên **3 nền tảng chính: Facebook Fanpage, Instagram Business và Meta Threads**. 
 
 Hệ thống được thiết kế theo kiến trúc phân tầng chuẩn (**Layered & API-Driven Architecture**), đáp ứng đầy đủ 7 Module nghiệp vụ:
 * **MOD-01: Authentication & Session**: Xác thực JWT kết hợp HttpOnly Cookie, bảo vệ Brute-force (khóa tài khoản 15 phút sau 5 lần nhập sai).
@@ -65,7 +65,7 @@ Backend/
 │   │   ├── __init__.py
 │   │   ├── role.py                     # Bảng roles
 │   │   ├── user.py                     # Bảng users
-│   │   ├── platform.py                 # Bảng platforms (Facebook, Instagram, TikTok)
+│   │   ├── platform.py                 # Bảng platforms (Facebook, Instagram, Threads)
 │   │   ├── post.py                     # Bảng posts (Quản lý trạng thái vòng đời bài viết)
 │   │   ├── approval.py                 # Bảng approvals (Lịch sử quy trình phê duyệt)
 │   │   ├── schedule.py                 # Bảng schedules (Lịch đăng bài Content Calendar)

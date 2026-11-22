@@ -1,11 +1,12 @@
 from typing import List
+from datetime import datetime
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.dependencies import RoleGuard
+from app.core.dependencies import RoleGuard, get_current_user
 from app.models.user import User
-from app.schemas.user import UserCreate, UserUpdate, UserStatusUpdate, UserResponse
+from app.schemas.user import UserCreate, UserUpdate, UserStatusUpdate, UserResponse, UserProfileUpdate
 from app.services.user_service import UserService
 
 router = APIRouter(prefix="/users", tags=["MOD-02: User & RBAC Management"])
@@ -37,6 +38,25 @@ def create_user(
     db: Session = Depends(get_db)
 ):
     return UserService.create_user(db, user_in)
+
+@router.put(
+    "/me",
+    response_model=UserResponse,
+    summary="Cập nhật hồ sơ cá nhân của người dùng hiện tại (FR-02)"
+)
+def update_my_profile(
+    profile_in: UserProfileUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if profile_in.full_name is not None and profile_in.full_name.strip():
+        current_user.full_name = profile_in.full_name.strip()
+    if profile_in.avatar_url is not None:
+        current_user.avatar_url = profile_in.avatar_url
+    current_user.updated_at = datetime.now()
+    db.commit()
+    db.refresh(current_user)
+    return current_user
 
 @router.put(
     "/{user_id}",

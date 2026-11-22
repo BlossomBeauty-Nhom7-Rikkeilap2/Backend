@@ -16,6 +16,10 @@ class UserUpdate(BaseModel):
     avatar_url: Optional[str] = None
     role_id: Optional[int] = None
 
+class UserProfileUpdate(BaseModel):
+    full_name: Optional[str] = None
+    avatar_url: Optional[str] = None
+
 class UserStatusUpdate(BaseModel):
     status: str = Field(..., pattern="^(ACTIVE|LOCKED|DEACTIVATED)$")
 

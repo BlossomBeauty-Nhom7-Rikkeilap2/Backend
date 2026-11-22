@@ -64,7 +64,7 @@ def seed_database(db):
             )
             db.add(p)
         else:
-            # Cập nhật thông tin nền tảng (ví dụ chuyển từ TIKTOK sang THREADS)
+            # Cập nhật thông tin nền tảng nếu đã tồn tại
             existing_p.platform_code = p_item["platform_code"]
             existing_p.platform_name = p_item["platform_name"]
             existing_p.color_hex = p_item["color_hex"]
