@@ -125,7 +125,11 @@ class FacebookGraphService:
     @classmethod
     def get_facebook_post_insights(cls, fb_post_id: str, access_token: str) -> Dict[str, Any]:
         """Lấy số liệu thống kê (Insights) bài viết Facebook (hỗ trợ cả PagePost ID và Photo ID)."""
-        url = f"{cls.GRAPH_API_BASE}/{cls.get_version()}/{fb_post_id}"
+        target_id = fb_post_id
+        if "_" not in target_id and settings.FB_PAGE_ID:
+            target_id = f"{settings.FB_PAGE_ID}_{target_id}"
+
+        url = f"{cls.GRAPH_API_BASE}/{cls.get_version()}/{target_id}"
         params = {
             "fields": "shares,comments.summary(true),reactions.summary(true)",
             "access_token": access_token
@@ -133,21 +137,29 @@ class FacebookGraphService:
         res = requests.get(url, params=params, timeout=10)
         data = res.json()
 
-        # Nếu là Photo node (không có trường shares), thử lại bỏ trường shares
-        if "error" in data and "shares" in str(data["error"].get("message", "")):
-            params["fields"] = "comments.summary(true),reactions.summary(true)"
-            res = requests.get(url, params=params, timeout=10)
+        # Nếu là Photo node (không có trường shares/reactions), thử lại bằng fields của Photo node
+        if "error" in data and data["error"].get("code") == 100:
+            photo_url = f"{cls.GRAPH_API_BASE}/{cls.get_version()}/{fb_post_id}"
+            photo_params = {
+                "fields": "likes.summary(true),comments.summary(true)",
+                "access_token": access_token
+            }
+            res = requests.get(photo_url, params=photo_params, timeout=10)
             data = res.json()
 
         if "error" in data:
             return {"success": False, "error": data["error"]}
 
-        likes = data.get("reactions", {}).get("summary", {}).get("total_count", 0)
+        likes = (
+            data.get("reactions", {}).get("summary", {}).get("total_count")
+            if "reactions" in data
+            else data.get("likes", {}).get("summary", {}).get("total_count", 0)
+        ) or 0
         comments = data.get("comments", {}).get("summary", {}).get("total_count", 0)
         shares = data.get("shares", {}).get("count", 0)
 
         # Lấy reach và views
-        insights_url = f"{cls.GRAPH_API_BASE}/{cls.get_version()}/{fb_post_id}/insights"
+        insights_url = f"{cls.GRAPH_API_BASE}/{cls.get_version()}/{target_id}/insights"
         insights_params = {
             "metric": "post_impressions,post_impressions_unique",
             "access_token": access_token
