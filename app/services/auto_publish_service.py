@@ -1,5 +1,7 @@
 import json
 import logging
+import mimetypes
+import os
 from datetime import datetime
 from typing import Dict, Any, Optional
 from sqlalchemy.orm import Session
@@ -10,12 +12,49 @@ from app.models.notification import Notification
 from app.models.user import User
 from app.models.platform import Platform
 from app.services.facebook_service import FacebookGraphService, ThreadsGraphService
+from app.services.media_service import MediaUploadService
 from app.core.websocket import manager as ws_manager
 from app.config import settings
 
 logger = logging.getLogger("AutoPublish")
 
 class AutoPublishService:
+    @staticmethod
+    def _ensure_public_media_url(db: Session, post: Post, media_url: str) -> str:
+        """Neu media_url la tep cuc bo (/uploads/...), tu dong day len R2 de co URL HTTPS cong khai cho Meta."""
+        is_local = media_url.startswith("/uploads/") or (
+            ("localhost" in media_url or "127.0.0.1" in media_url) and "/uploads/" in media_url
+        )
+        if not is_local:
+            return media_url
+
+        filename = media_url.split("/uploads/")[-1].split("?")[0]
+        local_path = os.path.join(settings.LOCAL_UPLOAD_DIR, filename)
+        if not os.path.exists(local_path):
+            return media_url
+
+        s3_client = MediaUploadService.get_s3_client()
+        if not (s3_client and settings.R2_BUCKET_NAME and settings.R2_PUBLIC_URL):
+            return media_url
+
+        try:
+            content_type, _ = mimetypes.guess_type(local_path)
+            with open(local_path, "rb") as f:
+                s3_client.put_object(
+                    Bucket=settings.R2_BUCKET_NAME,
+                    Key=filename,
+                    Body=f.read(),
+                    ContentType=content_type or "application/octet-stream"
+                )
+            public_url = f"{settings.R2_PUBLIC_URL.rstrip('/')}/{filename}"
+            post.media_files = [public_url]
+            db.commit()
+            logger.info(f"Da tu dong day anh cuc bo len R2 cho bai #{post.post_id}: {public_url}")
+            return public_url
+        except Exception as e:
+            logger.error(f"Khong the day anh cuc bo len R2 cho bai #{post.post_id}: {e}")
+            return media_url
+
     @staticmethod
     async def publish_post_now(db: Session, post_id: int, current_user: Optional[User] = None) -> Dict[str, Any]:
         """Tự động xuất bản ngay lập tức một bài viết đã duyệt hoặc đã lên lịch."""
@@ -52,6 +91,15 @@ class AutoPublishService:
                     media_url = files[0]
             except Exception:
                 media_url = None
+
+        # Neu media_url la duong dan cuc bo (/uploads/... hoac localhost), tu dong day len Cloudflare R2 neu R2 da cau hinh
+        if media_url:
+            media_url = AutoPublishService._ensure_public_media_url(db, post, media_url)
+            if media_url and (media_url.startswith("/") or "localhost" in media_url or "127.0.0.1" in media_url):
+                return {
+                    "success": False,
+                    "error": "Ảnh đính kèm đang lưu cục bộ (/uploads/...) nên Facebook/Instagram không thể tải được. Vui lòng khởi động lại Backend để nạp cấu hình Cloudflare R2 rồi thử lại."
+                }
 
         published_url = None
         api_response = {}
