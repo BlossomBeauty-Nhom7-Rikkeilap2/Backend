@@ -319,13 +319,6 @@ class AnalyticsService:
             )
 
         # Tinh toan moc tom tat: 24h, 7d, 30d va latest
-        all_stats = (
-            db.query(PostStatistic)
-            .filter(PostStatistic.post_id == post_id)
-            .order_by(PostStatistic.recorded_at.asc())
-            .all()
-        )
-
         m24h_item: Optional[PostStatisticHistoryItem] = None
         m7d_item: Optional[PostStatisticHistoryItem] = None
         m30d_item: Optional[PostStatisticHistoryItem] = None
@@ -400,23 +393,58 @@ class AnalyticsService:
         return stat
 
     @staticmethod
-    def get_dashboard_summary(db: Session) -> DashboardResponse:
+    def _get_latest_stats_map(db: Session, post_ids: List[int]) -> Dict[int, PostStatistic]:
+        """Lay ban ghi thong ke moi nhat cho danh sach post_id trong 1 truy van duy nhat (tranh N+1)."""
+        if not post_ids:
+            return {}
+
+        # Subquery tim recorded_at lon nhat theo tung post_id
+        latest_time_subq = (
+            db.query(
+                PostStatistic.post_id,
+                func.max(PostStatistic.recorded_at).label("max_recorded_at")
+            )
+            .filter(PostStatistic.post_id.in_(post_ids))
+            .group_by(PostStatistic.post_id)
+            .subquery()
+        )
+
+        rows = (
+            db.query(PostStatistic)
+            .join(
+                latest_time_subq,
+                (PostStatistic.post_id == latest_time_subq.c.post_id)
+                & (PostStatistic.recorded_at == latest_time_subq.c.max_recorded_at)
+            )
+            .order_by(PostStatistic.stat_id.asc())
+            .all()
+        )
+
+        # Neu co 2 ban ghi cung recorded_at, giu ban ghi co stat_id lon nhat
+        return {r.post_id: r for r in rows}
+
+    @classmethod
+    def get_dashboard_summary(cls, db: Session) -> DashboardResponse:
         """Tong hop bieu do phan tich da kenh (FR-15 & SDD 3.2.7)."""
         platforms = db.query(Platform).filter(Platform.is_active == True).all()
-        platform_summaries: List[PlatformSummary] = []
+        published_posts = db.query(Post).filter(
+            Post.status == "PUBLISHED",
+            Post.deleted_at.is_(None)
+        ).all()
 
+        latest_stats_map = cls._get_latest_stats_map(db, [p.post_id for p in published_posts])
+        posts_by_platform: Dict[int, List[Post]] = {}
+        for p in published_posts:
+            posts_by_platform.setdefault(p.platform_id, []).append(p)
+
+        platform_summaries: List[PlatformSummary] = []
         grand_posts = 0
         grand_reach = 0
         grand_views = 0
         grand_engagement = 0
 
         for plat in platforms:
-            posts = db.query(Post).filter(
-                Post.platform_id == plat.platform_id,
-                Post.status == "PUBLISHED",
-                Post.deleted_at.is_(None)
-            ).all()
-
+            posts = posts_by_platform.get(plat.platform_id, [])
             p_posts = len(posts)
             p_reach = 0
             p_views = 0
@@ -425,12 +453,7 @@ class AnalyticsService:
             p_shares = 0
 
             for p in posts:
-                latest_stat = (
-                    db.query(PostStatistic)
-                    .filter(PostStatistic.post_id == p.post_id)
-                    .order_by(PostStatistic.recorded_at.desc())
-                    .first()
-                )
+                latest_stat = latest_stats_map.get(p.post_id)
                 if latest_stat:
                     p_reach += latest_stat.reach_count
                     p_views += latest_stat.view_count
@@ -463,8 +486,8 @@ class AnalyticsService:
             platforms=platform_summaries
         )
 
-    @staticmethod
-    def export_report_data(db: Session) -> List[Dict[str, Any]]:
+    @classmethod
+    def export_report_data(cls, db: Session) -> List[Dict[str, Any]]:
         """Xuat du lieu tho phuc vu ket xuat bao cao Excel/PDF (FR-15)."""
         posts = (
             db.query(Post, Platform, User)
@@ -474,14 +497,11 @@ class AnalyticsService:
             .all()
         )
 
+        latest_stats_map = cls._get_latest_stats_map(db, [post.post_id for post, _, _ in posts])
+
         rows = []
         for post, platform, author in posts:
-            latest_stat = (
-                db.query(PostStatistic)
-                .filter(PostStatistic.post_id == post.post_id)
-                .order_by(PostStatistic.recorded_at.desc())
-                .first()
-            )
+            latest_stat = latest_stats_map.get(post.post_id)
             rows.append({
                 "post_id": post.post_id,
                 "title": post.title,

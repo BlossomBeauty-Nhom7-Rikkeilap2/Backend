@@ -26,7 +26,7 @@ def get_calendar(
     # Mặc định lấy trong vòng 30 ngày tới nếu không truyền tham số
     start = start_date or (datetime.now() - timedelta(days=7))
     end = end_date or (datetime.now() + timedelta(days=30))
-    return ScheduleService.get_calendar(db, start, end)
+    return ScheduleService.get_calendar(db, start, end, current_user)
 
 @router.put(
     "/{post_id}",

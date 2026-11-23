@@ -63,4 +63,4 @@ def get_approval_history(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    return ApprovalService.get_approval_history(db, post_id)
+    return ApprovalService.get_approval_history(db, post_id, current_user)

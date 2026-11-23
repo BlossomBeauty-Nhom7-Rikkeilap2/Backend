@@ -1,11 +1,12 @@
 from typing import List, Optional
 from datetime import datetime
 from fastapi import HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import or_
 
 from app.models.post import Post
 from app.models.platform import Platform
+from app.models.schedule import Schedule
 from app.models.user import User
 from app.schemas.post import PostCreate, PostUpdate, PostFilterParams
 
@@ -13,7 +14,7 @@ class PostService:
     @staticmethod
     def get_posts(db: Session, filter_params: PostFilterParams, current_user: User) -> List[Post]:
         """Lọc và phân trang bài viết (bỏ qua các bài đã bị xóa mềm)."""
-        query = db.query(Post).filter(Post.deleted_at.is_(None))
+        query = db.query(Post).options(joinedload(Post.author)).filter(Post.deleted_at.is_(None))
 
         # Phân quyền xem: Staff chỉ xem bài của mình (BR-01 & SDD)
         if current_user.role and current_user.role.role_code == "STAFF":
@@ -80,9 +81,15 @@ class PostService:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bạn chỉ có thể chỉnh sửa bài viết của chính mình")
 
         # Quy tắc chỉnh sửa theo BR-04 & SDD 3.2.3:
-        # Nếu sửa bài đã APPROVED, hệ thống bắt buộc chuyển lại về PENDING_APPROVAL
+        # Nếu sửa bài đã APPROVED, hệ thống bắt buộc chuyển lại về PENDING_APPROVAL và hủy lịch đang chờ
         if post.status == "APPROVED":
             post.status = "PENDING_APPROVAL"
+            active_sched = db.query(Schedule).filter(
+                Schedule.post_id == post.post_id,
+                Schedule.schedule_status == "ACTIVE"
+            ).first()
+            if active_sched:
+                active_sched.schedule_status = "CANCELLED"
         elif post.status not in ["DRAFT", "REVISION_REQUESTED", "REJECTED"]:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -96,6 +103,9 @@ class PostService:
         if post_in.hashtags is not None:
             post.hashtags = post_in.hashtags
         if post_in.platform_id is not None:
+            platform = db.query(Platform).filter(Platform.platform_id == post_in.platform_id).first()
+            if not platform or not platform.is_active:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Nền tảng đăng bài không hợp lệ")
             post.platform_id = post_in.platform_id
         if post_in.media_type is not None:
             post.media_type = post_in.media_type

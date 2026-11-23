@@ -121,8 +121,13 @@ def autosave_post(
 ):
     post_id = post_in.get("post_id")
     if post_id and str(post_id).isdigit():
-        existing = db.query(Post).filter(Post.post_id == int(post_id)).first()
-        if existing and existing.author_id == current_user.user_id:
+        existing = (
+            db.query(Post)
+            .filter(Post.post_id == int(post_id), Post.deleted_at.is_(None))
+            .first()
+        )
+        editable_statuses = {"DRAFT", "REVISION_REQUESTED", "REJECTED"}
+        if existing and existing.author_id == current_user.user_id and existing.status in editable_statuses:
             if "title" in post_in and post_in["title"]:
                 existing.title = post_in["title"]
             if "caption" in post_in:

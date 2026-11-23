@@ -94,23 +94,28 @@ def delete_notification(
     return {"message": "Đã xóa thông báo thành công", "status": "success"}
 
 @router.websocket("/ws/notifications")
-async def websocket_notifications_endpoint(websocket: WebSocket, token: str, db: Session = Depends(get_db)):
+async def websocket_notifications_endpoint(websocket: WebSocket, token: str):
     """
     Cổng kết nối WebSocket thời gian thực (SDD 2.1 & FR-12).
-    Xác thực token qua query parameter: ws://localhost:8000/ws/notifications?token=<JWT>
+    Xác thực token qua query parameter: ws://localhost:8000/api/ws/notifications?token=<JWT>
     """
     payload = decode_access_token(token)
-    if not payload:
+    if not payload or payload.get("sub") is None:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
 
-    user_id = payload.get("sub")
+    try:
+        user_id = int(payload.get("sub"))
+    except (ValueError, TypeError):
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
     role_code = payload.get("role", "STAFF")
 
     await ws_manager.connect(websocket, user_id, role_code)
     try:
         while True:
             # Lắng nghe ping/pong giữ kết nối
-            data = await websocket.receive_text()
+            await websocket.receive_text()
     except WebSocketDisconnect:
         ws_manager.disconnect(websocket, user_id, role_code)

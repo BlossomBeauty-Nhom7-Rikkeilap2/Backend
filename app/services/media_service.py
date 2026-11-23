@@ -72,7 +72,7 @@ class MediaUploadService:
                 detail=f"Dung lượng tệp vượt quá giới hạn cho phép ({limit_mb}MB)."
             )
 
-        ext = os.path.splitext(file.filename)[1]
+        ext = os.path.splitext(file.filename or "")[1]
         unique_filename = f"{uuid.uuid4().hex}{ext}"
 
         # 1. Thử đẩy lên Cloudflare R2 nếu có client
@@ -93,15 +93,12 @@ class MediaUploadService:
                 logger.error(f"[MediaService] Upload lên R2 thất bại, fallback lưu cục bộ: {e}")
 
         # 2. Fallback: Lưu tệp cục bộ (uploads/)
+        # Trả về đường dẫn tĩnh cục bộ /uploads/... để tránh trả nhầm URL R2 không tồn tại
         os.makedirs(settings.LOCAL_UPLOAD_DIR, exist_ok=True)
         local_path = os.path.join(settings.LOCAL_UPLOAD_DIR, unique_filename)
 
         with open(local_path, "wb") as f:
             f.write(contents)
 
-        if settings.R2_PUBLIC_URL and settings.R2_PUBLIC_URL.startswith("http"):
-            file_url = f"{settings.R2_PUBLIC_URL.rstrip('/')}/{unique_filename}"
-        else:
-            file_url = f"/uploads/{unique_filename}"
-
+        file_url = f"/uploads/{unique_filename}"
         return file_url, file_size, media_type

@@ -22,7 +22,11 @@ class AutoPublishService:
         post = db.query(Post).filter(Post.post_id == post_id, Post.deleted_at.is_(None)).first()
         if not post:
             return {"success": False, "error": "Không tìm thấy bài viết"}
-        
+
+        if current_user and current_user.role and current_user.role.role_code == "STAFF":
+            if post.author_id != current_user.user_id:
+                return {"success": False, "error": "Bạn chỉ có thể tự động xuất bản bài viết của chính mình"}
+
         if post.status not in ["APPROVED", "SCHEDULED"]:
             return {"success": False, "error": f"Chỉ có thể tự động đăng bài viết đã duyệt (APPROVED) hoặc đã lên lịch (SCHEDULED). Trạng thái hiện tại: {post.status}"}
 
