@@ -124,7 +124,7 @@ class FacebookGraphService:
 
     @classmethod
     def get_facebook_post_insights(cls, fb_post_id: str, access_token: str) -> Dict[str, Any]:
-        """Lấy số liệu thống kê (Insights) bài viết Facebook."""
+        """Lấy số liệu thống kê (Insights) bài viết Facebook (hỗ trợ cả PagePost ID và Photo ID)."""
         url = f"{cls.GRAPH_API_BASE}/{cls.get_version()}/{fb_post_id}"
         params = {
             "fields": "shares,comments.summary(true),reactions.summary(true)",
@@ -132,6 +132,12 @@ class FacebookGraphService:
         }
         res = requests.get(url, params=params, timeout=10)
         data = res.json()
+
+        # Nếu là Photo node (không có trường shares), thử lại bỏ trường shares
+        if "error" in data and "shares" in str(data["error"].get("message", "")):
+            params["fields"] = "comments.summary(true),reactions.summary(true)"
+            res = requests.get(url, params=params, timeout=10)
+            data = res.json()
 
         if "error" in data:
             return {"success": False, "error": data["error"]}

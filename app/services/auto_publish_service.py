@@ -131,7 +131,7 @@ class AutoPublishService:
                             "error": f"Lỗi Facebook API: {error_detail}"
                         }
 
-                    fb_post_id = fb_res.get("id") or fb_res.get("post_id")
+                    fb_post_id = fb_res.get("post_id") or fb_res.get("id")
                     if fb_post_id:
                         published_url = f"https://www.facebook.com/{fb_post_id}"
                     else:
