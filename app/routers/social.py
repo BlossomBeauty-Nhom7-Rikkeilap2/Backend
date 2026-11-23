@@ -1,7 +1,9 @@
 from typing import Dict, Any, Optional
+from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, Query, Body, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.models.user import User
@@ -61,6 +63,15 @@ def get_managed_accounts(
     pages = FacebookGraphService.get_managed_pages(user_access_token)
     return {"data": pages}
 
+def _extract_id_from_url(published_url: Optional[str]) -> Optional[str]:
+    if not published_url:
+        return None
+    path = urlparse(published_url).path.strip("/")
+    if not path:
+        return None
+    return path.split("/")[-1] or None
+
+
 @router.post(
     "/posts/{post_id}/sync-facebook",
     response_model=PostStatisticResponse,
@@ -69,8 +80,8 @@ def get_managed_accounts(
 )
 def sync_facebook_post_statistics(
     post_id: int,
-    fb_post_id: str = Body(..., embed=True, description="ID bài đăng trên Facebook (dạng {page_id}_{post_id})"),
-    access_token: str = Body(..., embed=True, description="Page Access Token hoặc User Access Token"),
+    fb_post_id: Optional[str] = Body(None, embed=True, description="ID bài đăng trên Facebook (mặc định trích từ published_url)"),
+    access_token: Optional[str] = Body(None, embed=True, description="Page Access Token (mặc định dùng cấu hình .env)"),
     milestone: Optional[str] = Body(None, embed=True, description="Mốc thời gian (24H, 7D, 30D, CUSTOM)"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -79,7 +90,15 @@ def sync_facebook_post_statistics(
     if not post:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy bài viết")
 
-    metrics = FacebookGraphService.get_facebook_post_insights(fb_post_id, access_token)
+    resolved_id = (fb_post_id or _extract_id_from_url(post.published_url) or "").strip()
+    resolved_token = (access_token or settings.FB_PAGE_ACCESS_TOKEN or "").strip()
+    if not resolved_id or not resolved_token:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Thiếu fb_post_id hoặc FB_PAGE_ACCESS_TOKEN để đồng bộ dữ liệu Facebook"
+        )
+
+    metrics = FacebookGraphService.get_facebook_post_insights(resolved_id, resolved_token)
     if not metrics.get("success"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -105,8 +124,8 @@ def sync_facebook_post_statistics(
 )
 def sync_instagram_post_statistics(
     post_id: int,
-    ig_media_id: str = Body(..., embed=True, description="ID bài đăng (Media ID) trên Instagram"),
-    access_token: str = Body(..., embed=True, description="Page Access Token của Trang liên kết với tài khoản Instagram"),
+    ig_media_id: Optional[str] = Body(None, embed=True, description="ID bài đăng (Media ID) trên Instagram"),
+    access_token: Optional[str] = Body(None, embed=True, description="Access Token (mặc định dùng cấu hình .env)"),
     milestone: Optional[str] = Body(None, embed=True, description="Mốc thời gian (24H, 7D, 30D, CUSTOM)"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -115,7 +134,15 @@ def sync_instagram_post_statistics(
     if not post:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy bài viết")
 
-    metrics = FacebookGraphService.get_instagram_media_insights(ig_media_id, access_token)
+    resolved_id = (ig_media_id or _extract_id_from_url(post.published_url) or "").strip()
+    resolved_token = (access_token or settings.IG_ACCESS_TOKEN or "").strip()
+    if not resolved_id or not resolved_token:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Thiếu ig_media_id hoặc IG_ACCESS_TOKEN để đồng bộ dữ liệu Instagram"
+        )
+
+    metrics = FacebookGraphService.get_instagram_media_insights(resolved_id, resolved_token)
     if not metrics.get("success"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -141,8 +168,8 @@ def sync_instagram_post_statistics(
 )
 def sync_threads_post_statistics(
     post_id: int,
-    threads_media_id: str = Body(..., embed=True, description="ID bài đăng trên Threads"),
-    access_token: str = Body(..., embed=True, description="Threads User Access Token"),
+    threads_media_id: Optional[str] = Body(None, embed=True, description="ID bài đăng trên Threads"),
+    access_token: Optional[str] = Body(None, embed=True, description="Threads User Access Token (mặc định dùng cấu hình .env)"),
     milestone: Optional[str] = Body(None, embed=True, description="Mốc thời gian (24H, 7D, 30D, CUSTOM)"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -151,7 +178,15 @@ def sync_threads_post_statistics(
     if not post:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy bài viết")
 
-    metrics = ThreadsGraphService.get_threads_insights(threads_media_id, access_token)
+    resolved_id = (threads_media_id or _extract_id_from_url(post.published_url) or "").strip()
+    resolved_token = (access_token or settings.THREADS_ACCESS_TOKEN or "").strip()
+    if not resolved_id or not resolved_token:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Thiếu threads_media_id hoặc THREADS_ACCESS_TOKEN để đồng bộ dữ liệu Threads"
+        )
+
+    metrics = ThreadsGraphService.get_threads_insights(resolved_id, resolved_token)
     if not metrics.get("success"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
