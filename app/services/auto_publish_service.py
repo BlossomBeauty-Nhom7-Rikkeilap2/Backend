@@ -174,8 +174,12 @@ class AutoPublishService:
                         "error": f"Lỗi kết nối mạng khi gọi Threads API: {str(e)}"
                     }
             else:
-                published_url = f"https://www.threads.net/@blossombeautystore/post/{post.post_id}_{int(now.timestamp())}"
-                logger.info(f"Threads API chưa cấu hình token thật, sử dụng URL mô phỏng: {published_url}")
+                err_msg = "Chưa cấu hình THREADS_USER_ID hoặc THREADS_ACCESS_TOKEN trong file .env để đăng bài lên Threads thật!"
+                logger.warning(err_msg)
+                return {
+                    "success": False,
+                    "error": err_msg
+                }
 
         # CẬP NHẬT TRẠNG THÁI POST VÀ SCHEDULE
         post.status = "PUBLISHED"
