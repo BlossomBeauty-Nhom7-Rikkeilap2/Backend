@@ -20,5 +20,5 @@ COPY . .
 # Mở cổng 8000
 EXPOSE 8000
 
-# Khởi chạy server FastAPI qua Uvicorn
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Khởi chạy server FastAPI qua Uvicorn (Hỗ trợ biến môi trường PORT trên Render / Cloud)
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

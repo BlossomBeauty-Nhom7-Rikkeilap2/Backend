@@ -17,12 +17,12 @@ from app.routers import (
     notifications,
     social,
 )
-from app.services.scheduler_worker import system_timer_worker
+from app.services.scheduler_worker import reminder_cron_worker, system_timer_worker
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Khởi chạy System Timer quét lịch ngầm
-    timer_task = asyncio.create_task(system_timer_worker())
+    # Khởi chạy ReminderCronWorker quét lịch ngầm mỗi 60 giây (FR-12 & SDD 2.1)
+    timer_task = asyncio.create_task(reminder_cron_worker())
     # Đảm bảo thư mục uploads tồn tại
     os.makedirs(settings.LOCAL_UPLOAD_DIR, exist_ok=True)
     yield
@@ -56,9 +56,24 @@ Hệ thống cung cấp trọn bộ RESTful API phân tầng rõ ràng cho 7 Mod
 )
 
 # Cấu hình CORS Middleware (cho phép Frontend React / Vue / HTML kết nối)
+cors_origins = set(settings.cors_origins_list)
+cors_origins.update([
+    "http://localhost:5500",
+    "http://127.0.0.1:5500",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:8080",
+    "http://127.0.0.1:8080",
+])
+if "*" in cors_origins:
+    cors_origins.remove("*")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins_list,
+    allow_origins=list(cors_origins),
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:[0-9]+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

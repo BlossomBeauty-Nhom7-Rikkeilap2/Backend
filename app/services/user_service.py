@@ -75,19 +75,60 @@ class UserService:
             role = db.query(Role).filter(Role.role_id == user_in.role_id).first()
             if not role:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Vai trò không tồn tại")
+            if user.role and user.role.role_code == "MANAGER" and role.role_code != "MANAGER" and user.status == "ACTIVE":
+                other_mgrs = (
+                    db.query(User)
+                    .join(Role, User.role_id == Role.role_id)
+                    .filter(Role.role_code == "MANAGER", User.status == "ACTIVE", User.user_id != user_id)
+                    .count()
+                )
+                if other_mgrs == 0:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Hệ thống phải còn ít nhất một Manager đang hoạt động"
+                    )
             user.role_id = user_in.role_id
+
+        if user_in.password:
+            user.password_hash = hash_password(user_in.password)
+            user.failed_login_attempts = 0
+            user.locked_until = None
 
         db.commit()
         db.refresh(user)
         return user
 
     @staticmethod
-    def update_user_status(db: Session, user_id: int, status_in: UserStatusUpdate) -> User:
+    def update_user_status(
+        db: Session,
+        user_id: int,
+        status_in: UserStatusUpdate,
+        actor_id: Optional[int] = None
+    ) -> User:
         """
         Bảo toàn dữ liệu khi ngưng kích hoạt: Không thực hiện hard DELETE 
         mà chuyển status = 'DEACTIVATED' (theo SDD 3.2.2 & Mục 8.2 SRS).
         """
+        if actor_id is not None and actor_id == user_id and status_in.status != "ACTIVE":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Bạn không thể tự khóa tài khoản của chính mình"
+            )
+
         user = UserService.get_user_by_id(db, user_id)
+        if status_in.status != "ACTIVE" and user.role and user.role.role_code == "MANAGER" and user.status == "ACTIVE":
+            other_mgrs = (
+                db.query(User)
+                .join(Role, User.role_id == Role.role_id)
+                .filter(Role.role_code == "MANAGER", User.status == "ACTIVE", User.user_id != user_id)
+                .count()
+            )
+            if other_mgrs == 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Không thể khóa Manager đang hoạt động cuối cùng"
+                )
+
         user.status = status_in.status
         if status_in.status == "ACTIVE":
             user.failed_login_attempts = 0

@@ -5,6 +5,10 @@ class LoginRequest(BaseModel):
     username_or_email: str
     password: str
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
 class UserInfoResponse(BaseModel):
     user_id: int
     username: str

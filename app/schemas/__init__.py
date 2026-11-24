@@ -4,7 +4,17 @@ from app.schemas.post import PostCreate, PostUpdate, PostResponse, PostFilterPar
 from app.schemas.approval import ApprovalSubmit, ApprovalAction, ApprovalResponse
 from app.schemas.schedule import ScheduleUpdate, CalendarEventResponse
 from app.schemas.notification import NotificationResponse
-from app.schemas.analytics import PostStatisticCreate, PostStatisticResponse, DashboardResponse
+from app.schemas.analytics import (
+    PostStatisticCreate,
+    PostStatisticResponse,
+    MockSyncRequest,
+    PostStatisticHistoryItem,
+    PostStatisticHistoryResponse,
+    MilestonesSummary,
+    GrowthRateSummary,
+    DashboardResponse,
+    PlatformSummary,
+)
 
 __all__ = [
     "LoginRequest",
@@ -26,5 +36,11 @@ __all__ = [
     "NotificationResponse",
     "PostStatisticCreate",
     "PostStatisticResponse",
+    "MockSyncRequest",
+    "PostStatisticHistoryItem",
+    "PostStatisticHistoryResponse",
+    "MilestonesSummary",
+    "GrowthRateSummary",
     "DashboardResponse",
+    "PlatformSummary",
 ]

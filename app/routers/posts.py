@@ -1,10 +1,11 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, UploadFile, File, Query, status
+from fastapi import APIRouter, Depends, UploadFile, File, Query, status, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.models.user import User
+from app.models.post import Post
 from app.schemas.post import PostCreate, PostUpdate, PostResponse, PostFilterParams
 from app.services.post_service import PostService
 from app.services.media_service import MediaUploadService
@@ -47,7 +48,7 @@ def get_post(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    return PostService.get_post_by_id(db, post_id)
+    return PostService.get_post_by_id(db, post_id, current_user)
 
 @router.post(
     "",
@@ -107,3 +108,54 @@ async def upload_media(
         "media_type": media_type,
         "filename": file.filename
     }
+
+@router.post(
+    "/autosave",
+    summary="Tự động lưu tạm bài viết (FR-04 autosave)",
+    description="Lưu hoặc cập nhật bài viết ở trạng thái DRAFT."
+)
+def autosave_post(
+    post_in: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    post_id = post_in.get("post_id")
+    if post_id and str(post_id).isdigit():
+        existing = (
+            db.query(Post)
+            .filter(Post.post_id == int(post_id), Post.deleted_at.is_(None))
+            .first()
+        )
+        editable_statuses = {"DRAFT", "REVISION_REQUESTED", "REJECTED"}
+        if existing and existing.author_id == current_user.user_id and existing.status in editable_statuses:
+            if "title" in post_in and post_in["title"]:
+                existing.title = post_in["title"]
+            if "caption" in post_in:
+                existing.caption = post_in["caption"]
+            if "hashtags" in post_in:
+                existing.hashtags = post_in["hashtags"]
+            if "media_files" in post_in:
+                existing.media_files = post_in["media_files"]
+            db.commit()
+            db.refresh(existing)
+            return {"status": "saved", "post_id": existing.post_id}
+    return {"status": "acknowledged"}
+
+@router.post(
+    "/{post_id}/auto-publish",
+    summary="Tự động xuất bản bài viết ngay lập tức qua API (100% tự động)",
+    description="Gọi trực tiếp API Facebook/Instagram để đăng bài tự động, chuyển trạng thái sang PUBLISHED."
+)
+async def auto_publish_post(
+    post_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    from app.services.auto_publish_service import AutoPublishService
+    result = await AutoPublishService.publish_post_now(db, post_id, current_user)
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=result.get("error", "Không thể tự động xuất bản")
+        )
+    return result

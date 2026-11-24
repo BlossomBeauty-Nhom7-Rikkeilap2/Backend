@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
@@ -18,10 +18,12 @@ router = APIRouter(prefix="/posts", tags=["MOD-04: Approval Workflow"])
 )
 async def submit_post(
     post_id: int,
-    submit_in: ApprovalSubmit,
+    submit_in: Optional[ApprovalSubmit] = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    if submit_in is None:
+        submit_in = ApprovalSubmit()
     return await ApprovalService.submit_post(db, post_id, submit_in, current_user)
 
 @router.post(
@@ -61,4 +63,4 @@ def get_approval_history(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    return ApprovalService.get_approval_history(db, post_id)
+    return ApprovalService.get_approval_history(db, post_id, current_user)

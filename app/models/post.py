@@ -33,3 +33,11 @@ class Post(Base):
     approvals = relationship("Approval", back_populates="post", cascade="all, delete-orphan")
     schedule = relationship("Schedule", back_populates="post", uselist=False, cascade="all, delete-orphan")
     statistics = relationship("PostStatistic", back_populates="post", cascade="all, delete-orphan")
+
+    @property
+    def author_name(self) -> str:
+        return self.author.full_name if self.author else ""
+
+    @property
+    def author_username(self) -> str:
+        return self.author.username if self.author else ""

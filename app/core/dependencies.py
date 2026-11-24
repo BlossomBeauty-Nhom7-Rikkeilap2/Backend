@@ -72,6 +72,12 @@ def get_current_user(
             detail="Tài khoản đã bị vô hiệu hóa. Vui lòng liên hệ Quản lý."
         )
 
+    if user.status == "LOCKED":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tài khoản đang bị khóa bởi Quản trị viên. Vui lòng liên hệ Quản lý."
+        )
+
     if user.locked_until and user.locked_until > datetime.now():
         wait_seconds = int((user.locked_until - datetime.now()).total_seconds())
         wait_minutes = max(1, (wait_seconds + 59) // 60)
