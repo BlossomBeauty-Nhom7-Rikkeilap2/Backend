@@ -26,7 +26,7 @@ class ScheduleService:
             .filter(
                 Schedule.scheduled_time >= start_date,
                 Schedule.scheduled_time <= end_date,
-                Schedule.schedule_status == "ACTIVE",
+                Schedule.schedule_status.in_(["ACTIVE", "COMPLETED"]),
                 Post.deleted_at.is_(None)
             )
         )
@@ -95,8 +95,9 @@ class ScheduleService:
             schedule.is_reminded_ontime = False
             schedule.is_overdue_alerted = False
 
-        # Chuyển trạng thái Post sang SCHEDULED theo Post State Machine (SDD 3.3)
+        # Chuyển trạng thái Post sang SCHEDULED và đồng bộ planned_publish_time (SDD 3.3)
         post.status = "SCHEDULED"
+        post.planned_publish_time = schedule_in.scheduled_time
 
         db.commit()
         db.refresh(schedule)

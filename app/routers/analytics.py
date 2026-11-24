@@ -77,7 +77,7 @@ def get_post_statistics_history(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    return AnalyticsService.get_post_statistics_history(db, post_id, timeframe, milestone, source_type)
+    return AnalyticsService.get_post_statistics_history(db, post_id, timeframe, milestone, source_type, current_user=current_user)
 
 @router.get(
     "/posts/{post_id}/statistics/latest",
@@ -90,7 +90,7 @@ def get_latest_post_statistic(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    return AnalyticsService.get_latest_post_statistic(db, post_id)
+    return AnalyticsService.get_latest_post_statistic(db, post_id, current_user=current_user)
 
 @router.get(
     "/analytics/dashboard",

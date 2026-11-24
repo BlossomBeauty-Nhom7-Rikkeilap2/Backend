@@ -72,6 +72,18 @@ def _extract_id_from_url(published_url: Optional[str]) -> Optional[str]:
     return path.split("/")[-1] or None
 
 
+def _get_accessible_post(db: Session, post_id: int, current_user: User) -> Post:
+    post = db.query(Post).filter(Post.post_id == post_id, Post.deleted_at.is_(None)).first()
+    if not post:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy bài viết")
+    if current_user.role and current_user.role.role_code == "STAFF" and post.author_id != current_user.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Bạn chỉ có thể đồng bộ số liệu cho bài viết của chính mình"
+        )
+    return post
+
+
 @router.post(
     "/posts/{post_id}/sync-facebook",
     response_model=PostStatisticResponse,
@@ -86,9 +98,7 @@ def sync_facebook_post_statistics(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    post = db.query(Post).filter(Post.post_id == post_id, Post.deleted_at.is_(None)).first()
-    if not post:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy bài viết")
+    post = _get_accessible_post(db, post_id, current_user)
 
     resolved_id = (fb_post_id or _extract_id_from_url(post.published_url) or "").strip()
     resolved_token = (access_token or settings.FB_PAGE_ACCESS_TOKEN or "").strip()
@@ -130,9 +140,7 @@ def sync_instagram_post_statistics(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    post = db.query(Post).filter(Post.post_id == post_id, Post.deleted_at.is_(None)).first()
-    if not post:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy bài viết")
+    post = _get_accessible_post(db, post_id, current_user)
 
     resolved_id = (ig_media_id or _extract_id_from_url(post.published_url) or "").strip()
     resolved_token = (access_token or settings.IG_ACCESS_TOKEN or "").strip()
@@ -142,7 +150,7 @@ def sync_instagram_post_statistics(
             detail="Thiếu ig_media_id hoặc IG_ACCESS_TOKEN để đồng bộ dữ liệu Instagram"
         )
 
-    metrics = FacebookGraphService.get_instagram_media_insights(resolved_id, resolved_token)
+    metrics = FacebookGraphService.get_instagram_media_insights(resolved_id, resolved_token, published_url=post.published_url)
     if not metrics.get("success"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -174,9 +182,7 @@ def sync_threads_post_statistics(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    post = db.query(Post).filter(Post.post_id == post_id, Post.deleted_at.is_(None)).first()
-    if not post:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy bài viết")
+    post = _get_accessible_post(db, post_id, current_user)
 
     resolved_id = (threads_media_id or _extract_id_from_url(post.published_url) or "").strip()
     resolved_token = (access_token or settings.THREADS_ACCESS_TOKEN or "").strip()
@@ -186,7 +192,7 @@ def sync_threads_post_statistics(
             detail="Thiếu threads_media_id hoặc THREADS_ACCESS_TOKEN để đồng bộ dữ liệu Threads"
         )
 
-    metrics = ThreadsGraphService.get_threads_insights(resolved_id, resolved_token)
+    metrics = ThreadsGraphService.get_threads_insights(resolved_id, resolved_token, published_url=post.published_url)
     if not metrics.get("success"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

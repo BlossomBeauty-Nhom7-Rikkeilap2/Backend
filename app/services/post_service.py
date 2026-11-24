@@ -81,8 +81,8 @@ class PostService:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bạn chỉ có thể chỉnh sửa bài viết của chính mình")
 
         # Quy tắc chỉnh sửa theo BR-04 & SDD 3.2.3:
-        # Nếu sửa bài đã APPROVED, hệ thống bắt buộc chuyển lại về PENDING_APPROVAL và hủy lịch đang chờ
-        if post.status == "APPROVED":
+        # Nếu sửa bài đã APPROVED hoặc SCHEDULED, hệ thống bắt buộc chuyển lại về PENDING_APPROVAL và hủy lịch đang chờ
+        if post.status in ["APPROVED", "SCHEDULED"]:
             post.status = "PENDING_APPROVAL"
             active_sched = db.query(Schedule).filter(
                 Schedule.post_id == post.post_id,

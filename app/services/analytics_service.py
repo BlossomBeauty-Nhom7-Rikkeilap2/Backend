@@ -70,6 +70,12 @@ class AnalyticsService:
         if not post:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Khong tim thay bai viet")
 
+        if current_user and current_user.role and current_user.role.role_code == "STAFF" and post.author_id != current_user.user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Ban chi co the cap nhat so lieu cho bai viet cua chinh minh"
+            )
+
         if post.status != "PUBLISHED":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -119,6 +125,12 @@ class AnalyticsService:
         post = db.query(Post).filter(Post.post_id == post_id, Post.deleted_at.is_(None)).first()
         if not post:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Khong tim thay bai viet")
+
+        if current_user and current_user.role and current_user.role.role_code == "STAFF" and post.author_id != current_user.user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Ban chi co the dong bo so lieu cho bai viet cua chinh minh"
+            )
 
         if post.status != "PUBLISHED":
             raise HTTPException(
@@ -252,7 +264,8 @@ class AnalyticsService:
         post_id: int,
         timeframe: Optional[str] = None,
         milestone: Optional[str] = None,
-        source_type: Optional[str] = None
+        source_type: Optional[str] = None,
+        current_user: Optional[User] = None
     ) -> PostStatisticHistoryResponse:
         """Truy van lich su chi so do luong bai viet theo cac moc 24h/7d/30d va nguon MANUAL/API (FR-14)."""
         post = (
@@ -262,6 +275,11 @@ class AnalyticsService:
         )
         if not post:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Khong tim thay bai viet")
+        if current_user and current_user.role and current_user.role.role_code == "STAFF" and post.author_id != current_user.user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Ban chi co the xem so lieu cua bai viet do minh phu trach"
+            )
 
         query = db.query(PostStatistic).filter(PostStatistic.post_id == post_id)
 
@@ -373,11 +391,16 @@ class AnalyticsService:
         )
 
     @staticmethod
-    def get_latest_post_statistic(db: Session, post_id: int) -> PostStatistic:
+    def get_latest_post_statistic(db: Session, post_id: int, current_user: Optional[User] = None) -> PostStatistic:
         """Lay ban ghi so lieu do luong moi nhat cua bai viet."""
         post = db.query(Post).filter(Post.post_id == post_id, Post.deleted_at.is_(None)).first()
         if not post:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Khong tim thay bai viet")
+        if current_user and current_user.role and current_user.role.role_code == "STAFF" and post.author_id != current_user.user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Ban chi co the xem so lieu cua bai viet do minh phu trach"
+            )
 
         stat = (
             db.query(PostStatistic)

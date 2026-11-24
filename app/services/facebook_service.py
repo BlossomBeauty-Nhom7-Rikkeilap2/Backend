@@ -283,13 +283,55 @@ class FacebookGraphService:
         }
 
     @classmethod
-    def get_instagram_media_insights(cls, ig_media_id: str, access_token: str) -> Dict[str, Any]:
+    def resolve_instagram_media_id(
+        cls,
+        id_or_shortcode: str,
+        access_token: str,
+        published_url: Optional[str] = None
+    ) -> str:
+        """
+        Chuyển đổi shortcode hoặc permalink Instagram sang numeric Media ID nếu cần.
+        """
+        candidate = (id_or_shortcode or "").strip()
+        if candidate.isdigit():
+            return candidate
+        ig_user_id = (settings.IG_ACCOUNT_ID or "").strip()
+        if not ig_user_id or not access_token:
+            return candidate
+
+        norm_pub = (published_url or "").strip().rstrip("/")
+        try:
+            url = f"{cls.GRAPH_API_BASE}/{cls.get_version()}/{ig_user_id}/media"
+            res = requests.get(
+                url,
+                params={"fields": "id,shortcode,permalink", "limit": 50, "access_token": access_token},
+                timeout=10
+            )
+            items = res.json().get("data", [])
+            for item in items:
+                sc = (item.get("shortcode") or "").strip()
+                perm = (item.get("permalink") or "").strip().rstrip("/")
+                if (candidate and sc == candidate) or (norm_pub and perm == norm_pub):
+                    return str(item.get("id") or candidate)
+        except Exception:
+            pass
+        return candidate
+
+    @classmethod
+    def get_instagram_media_insights(
+        cls,
+        ig_media_id: str,
+        access_token: str,
+        published_url: Optional[str] = None
+    ) -> Dict[str, Any]:
         """
         Lấy số liệu thống kê bài đăng Instagram (Likes, Comments, Reach, Impressions):
-        Instagram Graph API cung cấp metric: impressions, reach, total_interactions, saved, video_views
+        Hỗ trợ tự động phân giải shortcode từ published_url sang numeric Media ID.
         """
+        resolved_media_id = cls.resolve_instagram_media_id(ig_media_id, access_token, published_url)
+
         # Lấy like và comments cơ bản
-        media_url = f"{cls.GRAPH_API_BASE}/{cls.get_version()}/{ig_media_id}"
+        media_url = f"{cls.GRAPH_API_BASE}/{cls.get_version()}/{resolved_media_id}"
         media_params = {
             "fields": "like_count,comments_count,media_type,permalink",
             "access_token": access_token
@@ -300,24 +342,31 @@ class FacebookGraphService:
         if "error" in media_data:
             return {"success": False, "error": media_data["error"]}
 
-        likes = media_data.get("like_count", 0)
-        comments = media_data.get("comments_count", 0)
+        likes = media_data.get("like_count", 0) or 0
+        comments = media_data.get("comments_count", 0) or 0
 
-        # Lấy insights chi tiết
-        insights_url = f"{cls.GRAPH_API_BASE}/{cls.get_version()}/{ig_media_id}/insights"
-        insights_params = {
-            "metric": "impressions,reach,total_interactions",
-            "access_token": access_token
-        }
-        insights_res = requests.get(insights_url, params=insights_params, timeout=10)
-        insights_data = insights_res.json()
+        # Lấy insights chi tiết (fallback sang reach,total_interactions nếu impressions bị gỡ trên Graph API mới)
+        insights_url = f"{cls.GRAPH_API_BASE}/{cls.get_version()}/{resolved_media_id}/insights"
+        insights_data: Dict[str, Any] = {}
+        for metric_list in ("impressions,reach,total_interactions", "reach,total_interactions"):
+            try:
+                insights_res = requests.get(
+                    insights_url,
+                    params={"metric": metric_list, "access_token": access_token},
+                    timeout=10
+                )
+                insights_data = insights_res.json()
+                if "data" in insights_data:
+                    break
+            except Exception:
+                pass
 
         reach = 0
         views = 0
         shares = 0
         for item in insights_data.get("data", []):
             name = item.get("name")
-            val = item.get("values", [{}])[0].get("value", 0)
+            val = item.get("values", [{}])[0].get("value", 0) or 0
             if name == "reach":
                 reach = val
             elif name == "impressions":
@@ -325,6 +374,9 @@ class FacebookGraphService:
             elif name == "total_interactions":
                 # total_interactions = likes + comments + shares + saves
                 shares = max(0, val - (likes + comments))
+
+        if views == 0 and reach > 0:
+            views = reach
 
         return {
             "success": True,
@@ -433,10 +485,55 @@ class ThreadsGraphService:
         }
 
     @classmethod
-    def get_threads_insights(cls, threads_media_id: str, access_token: str) -> Dict[str, Any]:
-        """Lấy số liệu thống kê bài đăng Threads."""
+    def resolve_threads_media_id(
+        cls,
+        id_or_shortcode: str,
+        access_token: str,
+        published_url: Optional[str] = None
+    ) -> str:
+        """
+        Chuyển đổi shortcode hoặc permalink Threads sang numeric Media ID nếu cần.
+        """
+        candidate = (id_or_shortcode or "").strip()
+        if candidate.isdigit():
+            return candidate
+        threads_user_id = (settings.THREADS_USER_ID or "").strip()
+        if not threads_user_id or not access_token:
+            return candidate
+
+        def _norm_threads_url(u: str) -> str:
+            return (u or "").strip().rstrip("/").replace("threads.com/", "threads.net/")
+
+        norm_pub = _norm_threads_url(published_url or "")
+        try:
+            version = cls.get_version()
+            url = f"{cls.API_BASE}/{version}/{threads_user_id}/threads"
+            res = requests.get(
+                url,
+                params={"fields": "id,shortcode,permalink", "limit": 50, "access_token": access_token},
+                timeout=10
+            )
+            items = res.json().get("data", [])
+            for item in items:
+                sc = (item.get("shortcode") or "").strip()
+                perm = _norm_threads_url(item.get("permalink") or "")
+                if (candidate and sc == candidate) or (norm_pub and perm == norm_pub) or (candidate and perm.endswith("/" + candidate)):
+                    return str(item.get("id") or candidate)
+        except Exception:
+            pass
+        return candidate
+
+    @classmethod
+    def get_threads_insights(
+        cls,
+        threads_media_id: str,
+        access_token: str,
+        published_url: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Lấy số liệu thống kê bài đăng Threads (hỗ trợ cả numeric ID và shortcode)."""
+        resolved_id = cls.resolve_threads_media_id(threads_media_id, access_token, published_url)
         version = cls.get_version()
-        url = f"{cls.API_BASE}/{version}/{threads_media_id}/insights"
+        url = f"{cls.API_BASE}/{version}/{resolved_id}/insights"
         params = {
             "metric": "views,likes,replies,reposts,quotes",
             "access_token": access_token

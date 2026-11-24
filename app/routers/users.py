@@ -83,4 +83,4 @@ def update_user_status(
     current_user: User = Depends(RoleGuard(["MANAGER"])),
     db: Session = Depends(get_db)
 ):
-    return UserService.update_user_status(db, user_id, status_in)
+    return UserService.update_user_status(db, user_id, status_in, actor_id=current_user.user_id)
