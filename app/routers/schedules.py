@@ -23,10 +23,10 @@ def get_calendar(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    # Mặc định lấy trong vòng 30 ngày tới nếu không truyền tham số
-    start = start_date or (datetime.now() - timedelta(days=7))
-    end = end_date or (datetime.now() + timedelta(days=30))
-    return ScheduleService.get_calendar(db, start, end)
+    # Mặc định lấy rộng khoảng thời gian trước và sau để hiển thị đầy đủ trên lịch Tháng/Tuần/Ngày
+    start = start_date or (datetime.now() - timedelta(days=120))
+    end = end_date or (datetime.now() + timedelta(days=180))
+    return ScheduleService.get_calendar(db, start, end, current_user)
 
 @router.put(
     "/{post_id}",

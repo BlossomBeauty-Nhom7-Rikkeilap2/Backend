@@ -56,12 +56,16 @@ class ApprovalService:
         db.refresh(approval)
 
         # Phát thông báo WebSocket tới tất cả Manager
-        await ws_manager.broadcast_to_role("MANAGER", {
-            "type": "APPROVAL_REQUEST",
-            "post_id": post.post_id,
-            "title": post.title,
-            "author": current_user.full_name
-        })
+        try:
+            await ws_manager.broadcast_to_role("MANAGER", {
+                "type": "APPROVAL_REQUEST",
+                "post_id": post.post_id,
+                "title": "Yêu cầu phê duyệt bài viết mới",
+                "message": f"Nhân viên {current_user.full_name} đã gửi duyệt bài: '{post.title}'",
+                "author": current_user.full_name
+            })
+        except Exception:
+            pass
 
         return approval
 
@@ -121,21 +125,25 @@ class ApprovalService:
 
             db.commit()
             db.refresh(approval)
-
-            # Đẩy Notification qua WebSocket
-            await ws_manager.send_to_user(post.author_id, {
-                "type": "POST_APPROVED",
-                "post_id": post.post_id,
-                "title": post.title
-            })
-
-            return approval
         except Exception as e:
             db.rollback()
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Lỗi giao dịch khi phê duyệt bài viết: {str(e)}"
             )
+
+        # Đẩy Notification qua WebSocket ngoài transaction DB
+        try:
+            await ws_manager.send_to_user(post.author_id, {
+                "type": "POST_APPROVED",
+                "post_id": post.post_id,
+                "title": "Bài viết đã được phê duyệt",
+                "message": f"Bài viết '{post.title}' của bạn đã được Quản lý {current_user.full_name} phê duyệt."
+            })
+        except Exception:
+            pass
+
+        return approval
 
     @staticmethod
     async def reject_post(db: Session, post_id: int, action_in: ApprovalAction, current_user: User) -> Approval:
@@ -185,20 +193,31 @@ class ApprovalService:
 
             db.commit()
             db.refresh(approval)
-
-            await ws_manager.send_to_user(post.author_id, {
-                "type": "POST_REJECTED",
-                "post_id": post.post_id,
-                "status": target_status,
-                "reason": action_in.comment.strip()
-            })
-
-            return approval
         except Exception as e:
             db.rollback()
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
+        try:
+            await ws_manager.send_to_user(post.author_id, {
+                "type": "POST_REJECTED",
+                "post_id": post.post_id,
+                "status": target_status,
+                "title": f"Bài viết bị {('yêu cầu sửa' if target_status == 'REVISION_REQUESTED' else 'từ chối')}",
+                "message": f"Lý do từ Quản lý: {action_in.comment.strip()}",
+                "reason": action_in.comment.strip()
+            })
+        except Exception:
+            pass
+
+        return approval
+
     @staticmethod
-    def get_approval_history(db: Session, post_id: int) -> List[Approval]:
+    def get_approval_history(db: Session, post_id: int, current_user: User = None) -> List[Approval]:
         """Xem toàn bộ lịch sử duyệt bài của một Post (BR-07)."""
+        post = db.query(Post).filter(Post.post_id == post_id, Post.deleted_at.is_(None)).first()
+        if not post:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy bài viết")
+        if current_user and current_user.role and current_user.role.role_code == "STAFF":
+            if post.author_id != current_user.user_id:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bạn chỉ có thể xem lịch sử duyệt bài viết của chính mình")
         return db.query(Approval).filter(Approval.post_id == post_id).order_by(Approval.created_at.desc()).all()

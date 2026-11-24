@@ -11,6 +11,14 @@ from app.models.post import Post
 from app.models.schedule import Schedule
 from app.models.notification import Notification
 from app.services.scheduler_worker import ReminderCronWorker
+from app.services.auto_publish_service import AutoPublishService
+
+@pytest.fixture(autouse=True)
+def mock_auto_publish(monkeypatch):
+    """Chặn gọi Meta Graph API thật trong quá trình chạy unit test."""
+    async def _fake_publish(db, post, sched, now):
+        return {"success": False, "error": "Mocked in unit test"}
+    monkeypatch.setattr(AutoPublishService, "execute_auto_publish", _fake_publish)
 
 @pytest.fixture
 def db_session():

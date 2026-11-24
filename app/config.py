@@ -43,18 +43,14 @@ class Settings(BaseSettings):
     FB_PAGE_ACCESS_TOKEN: str = ""
     IG_ACCOUNT_ID: str = ""
     IG_ACCESS_TOKEN: str = ""
-    TIKTOK_APP_ID: str = ""
-    TIKTOK_APP_SECRET: str = ""
-    TIKTOK_CLIENT_KEY: str = ""
-    TIKTOK_CLIENT_SECRET: str = ""
 
-    @property
-    def tiktok_key(self) -> str:
-        return self.TIKTOK_CLIENT_KEY or self.TIKTOK_APP_ID
-
-    @property
-    def tiktok_secret(self) -> str:
-        return self.TIKTOK_CLIENT_SECRET or self.TIKTOK_APP_SECRET
+    # Threads API
+    THREADS_APP_ID: str = ""
+    THREADS_APP_SECRET: str = ""
+    THREADS_API_VERSION: str = "v1.0"
+    THREADS_API_BASE: str = "https://graph.threads.net"
+    THREADS_USER_ID: str = ""
+    THREADS_ACCESS_TOKEN: str = ""
 
     # Scheduler & CORS
     SCHEDULER_INTERVAL_SECONDS: int = 60

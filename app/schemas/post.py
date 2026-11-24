@@ -29,6 +29,8 @@ class PostResponse(BaseModel):
     hashtags: Optional[str] = None
     platform_id: int
     author_id: int
+    author_name: Optional[str] = None
+    author_username: Optional[str] = None
     media_type: str
     media_files: Optional[Any] = None
     total_media_size_bytes: int

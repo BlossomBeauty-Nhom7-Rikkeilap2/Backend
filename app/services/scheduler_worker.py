@@ -74,156 +74,27 @@ class ReminderCronWorker:
                 diff_seconds = (sched.scheduled_time - now).total_seconds()
                 diff_minutes = diff_seconds / 60.0
 
-                # -------------------------------------------------------------
-                # 1. Nhắc trước 30 phút (SCHEDULE_REMINDER)
-                # Điều kiện: Còn trong khoảng (10, 30] phút và chưa gửi cờ 30m
-                # -------------------------------------------------------------
+                # 1. Nhắc trước 30 phút (trong khoảng (10, 30] phút)
                 if 10 < diff_minutes <= 30 and not sched.is_reminded_30m:
-                    sched.is_reminded_30m = True
-                    notif = Notification(
-                        recipient_id=post.author_id,
-                        post_id=post.post_id,
-                        notification_type="SCHEDULE_REMINDER",
-                        title="Nhắc lịch đăng bài (còn 30 phút)",
-                        message=f"Bài viết '{post.title}' dự kiến đăng vào lúc {sched.scheduled_time.strftime('%H:%M %d/%m/%Y')}."
-                    )
-                    db.add(notif)
-                    await ws_manager.send_to_user(post.author_id, {
-                        "type": "SCHEDULE_REMINDER",
-                        "post_id": post.post_id,
-                        "title": post.title,
-                        "minutes_left": 30,
-                        "scheduled_time": sched.scheduled_time.isoformat()
-                    })
+                    await self._send_pre_publish_reminder(db, sched, post, minutes_left=30)
                     stats["reminded_30m"].append(post.post_id)
-                    logger.info(f"[30m Reminder] Gửi nhắc lịch 30 phút bài viết #{post.post_id} tới Staff #{post.author_id}")
 
-                # -------------------------------------------------------------
-                # 2. Nhắc trước 10 phút (SCHEDULE_REMINDER)
-                # Điều kiện: Còn <= 10 phút (và > 0 phút) và chưa gửi cờ 10m
-                # -------------------------------------------------------------
+                # 2. Nhắc trước 10 phút (trong khoảng (0, 10] phút)
                 if 0 < diff_minutes <= 10 and not sched.is_reminded_10m:
-                    sched.is_reminded_10m = True
-                    if not sched.is_reminded_30m:
-                        sched.is_reminded_30m = True
-
-                    notif = Notification(
-                        recipient_id=post.author_id,
-                        post_id=post.post_id,
-                        notification_type="SCHEDULE_REMINDER",
-                        title="Nhắc lịch đăng bài khẩn (còn 10 phút)",
-                        message=f"Chỉ còn 10 phút đến giờ hệ thống tự động xuất bản bài viết '{post.title}' ({sched.scheduled_time.strftime('%H:%M %d/%m/%Y')})!"
-                    )
-                    db.add(notif)
-                    await ws_manager.send_to_user(post.author_id, {
-                        "type": "SCHEDULE_REMINDER",
-                        "post_id": post.post_id,
-                        "title": post.title,
-                        "minutes_left": 10,
-                        "scheduled_time": sched.scheduled_time.isoformat()
-                    })
+                    await self._send_pre_publish_reminder(db, sched, post, minutes_left=10)
                     stats["reminded_10m"].append(post.post_id)
-                    logger.info(f"[10m Reminder] Gửi nhắc lịch khẩn 10 phút bài viết #{post.post_id} tới Staff #{post.author_id}")
 
-                # -------------------------------------------------------------
-                # 3. Đúng giờ (0 phút / Đến giờ đăng bài)
-                # Điều kiện: diff_seconds <= 0 và chưa gửi cờ đúng giờ
-                # -------------------------------------------------------------
+                # 3. Đúng giờ (0 phút) và kích hoạt tự động xuất bản
                 if diff_seconds <= 0 and not sched.is_reminded_ontime:
-                    sched.is_reminded_ontime = True
-                    sched.is_reminded_30m = True
-                    sched.is_reminded_10m = True
-
-                    notif = Notification(
-                        recipient_id=post.author_id,
-                        post_id=post.post_id,
-                        notification_type="SCHEDULE_REMINDER",
-                        title="Đến giờ đăng bài! ⏰",
-                        message=f"Đã đến thời gian đăng bài viết '{post.title}' ({sched.scheduled_time.strftime('%H:%M %d/%m/%Y')})."
-                    )
-                    db.add(notif)
-                    await ws_manager.send_to_user(post.author_id, {
-                        "type": "SCHEDULE_REMINDER",
-                        "post_id": post.post_id,
-                        "title": post.title,
-                        "minutes_left": 0,
-                        "scheduled_time": sched.scheduled_time.isoformat()
-                    })
+                    published = await self._handle_ontime_publish(db, sched, post, now)
                     stats["reminded_ontime"].append(post.post_id)
-                    logger.info(f"[On-Time] Đã đến giờ đăng bài #{post.post_id}. Kích hoạt tự động xuất bản.")
+                    if published:
+                        stats["published"].append(post.post_id)
 
-                    # Thử tự động xuất bản qua API mạng xã hội
-                    try:
-                        pub_res = await AutoPublishService.execute_auto_publish(db, post, sched, now)
-                        if pub_res.get("success"):
-                            stats["published"].append(post.post_id)
-                            logger.info(f"[AutoPublish] Tự động xuất bản thành công bài #{post.post_id}")
-                    except Exception as pub_err:
-                        logger.error(f"[AutoPublish Error] Lỗi khi tự động xuất bản bài #{post.post_id}: {pub_err}")
-
-                # -------------------------------------------------------------
-                # 4. Cảnh báo quá hạn 15 phút (OVERDUE_ALERT)
-                # Điều kiện: Đã quá giờ đăng >= 15 phút (diff_minutes <= -15),
-                # bài viết chưa hoàn thành/published, và chưa gửi cờ cảnh báo quá hạn.
-                # Gửi cho CẢ Staff (tác giả) và tất cả Manager!
-                # -------------------------------------------------------------
+                # 4. Cảnh báo quá hạn 15 phút gửi cho Staff và toàn bộ Manager
                 if diff_minutes <= -15 and post.status != "PUBLISHED" and not sched.is_overdue_alerted:
-                    sched.is_overdue_alerted = True
-                    sched.is_reminded_30m = True
-                    sched.is_reminded_10m = True
-                    sched.is_reminded_ontime = True
-
-                    # 4.1. Gửi thông báo cho Staff (tác giả bài viết)
-                    staff_notif = Notification(
-                        recipient_id=post.author_id,
-                        post_id=post.post_id,
-                        notification_type="OVERDUE_ALERT",
-                        title="CẢNH BÁO: Quá hạn đăng bài 15 phút!",
-                        message=f"Bài viết '{post.title}' đã quá giờ đăng 15 phút ({sched.scheduled_time.strftime('%H:%M %d/%m/%Y')}) nhưng chưa được xuất bản. Vui lòng kiểm tra và xử lý ngay!"
-                    )
-                    db.add(staff_notif)
-                    await ws_manager.send_to_user(post.author_id, {
-                        "type": "OVERDUE_ALERT",
-                        "post_id": post.post_id,
-                        "title": post.title,
-                        "minutes_overdue": 15,
-                        "scheduled_time": sched.scheduled_time.isoformat()
-                    })
-
-                    # 4.2. Gửi thông báo cho toàn bộ Marketing Manager
-                    managers = (
-                        db.query(User)
-                        .join(Role, User.role_id == Role.role_id)
-                        .filter(Role.role_code == "MANAGER")
-                        .all()
-                    )
-
-                    for mgr in managers:
-                        if mgr.user_id != post.author_id:
-                            mgr_notif = Notification(
-                                recipient_id=mgr.user_id,
-                                post_id=post.post_id,
-                                notification_type="OVERDUE_ALERT",
-                                title=f"Cảnh báo quá hạn đăng bài #{post.post_id} (15 phút)",
-                                message=f"Bài viết '{post.title}' của nhân viên (Mã tác giả: {post.author_id}) đã quá hạn đăng 15 phút ({sched.scheduled_time.strftime('%H:%M %d/%m/%Y')}) nhưng chưa xuất bản."
-                            )
-                            db.add(mgr_notif)
-
-                    # Realtime broadcast tới toàn bộ Manager đang online
-                    await ws_manager.broadcast_to_role("MANAGER", {
-                        "type": "OVERDUE_ALERT",
-                        "post_id": post.post_id,
-                        "title": post.title,
-                        "author_id": post.author_id,
-                        "minutes_overdue": 15,
-                        "scheduled_time": sched.scheduled_time.isoformat()
-                    })
-
+                    await self._send_overdue_alerts(db, sched, post)
                     stats["overdue_alerted"].append(post.post_id)
-                    logger.warning(
-                        f"[Overdue 15m] Đã gửi cảnh báo quá hạn 15 phút cho bài #{post.post_id} "
-                        f"tới Staff #{post.author_id} và {len(managers)} Managers."
-                    )
 
             db.commit()
             return stats
@@ -237,17 +108,140 @@ class ReminderCronWorker:
             if close_db_after and db:
                 db.close()
 
+    async def _send_pre_publish_reminder(
+        self, db: Session, sched: Schedule, post: Post, minutes_left: int
+    ) -> None:
+        """Gửi thông báo nhắc lịch trước 30 phút hoặc 10 phút cho tác giả."""
+        sched.is_reminded_30m = True
+        if minutes_left <= 10:
+            sched.is_reminded_10m = True
+            title = "Nhắc lịch đăng bài khẩn (còn 10 phút)"
+            message = f"Chỉ còn 10 phút đến giờ hệ thống tự động xuất bản bài viết '{post.title}' ({sched.scheduled_time.strftime('%H:%M %d/%m/%Y')})!"
+        else:
+            title = "Nhắc lịch đăng bài (còn 30 phút)"
+            message = f"Bài viết '{post.title}' dự kiến đăng vào lúc {sched.scheduled_time.strftime('%H:%M %d/%m/%Y')}."
+
+        db.add(Notification(
+            recipient_id=post.author_id,
+            post_id=post.post_id,
+            notification_type="SCHEDULE_REMINDER",
+            title=title,
+            message=message
+        ))
+        await ws_manager.send_to_user(post.author_id, {
+            "type": "SCHEDULE_REMINDER",
+            "post_id": post.post_id,
+            "title": title,
+            "message": message,
+            "minutes_left": minutes_left,
+            "scheduled_time": sched.scheduled_time.isoformat()
+        })
+        logger.info(f"[{minutes_left}m Reminder] Gửi nhắc lịch bài viết #{post.post_id} tới Staff #{post.author_id}")
+
+    async def _handle_ontime_publish(
+        self, db: Session, sched: Schedule, post: Post, now: datetime
+    ) -> bool:
+        """Thông báo đến giờ đăng bài và thử tự động xuất bản qua API mạng xã hội."""
+        sched.is_reminded_ontime = True
+        sched.is_reminded_30m = True
+        sched.is_reminded_10m = True
+
+        title = "Đến giờ đăng bài"
+        message = f"Đã đến thời gian đăng bài viết '{post.title}' ({sched.scheduled_time.strftime('%H:%M %d/%m/%Y')})."
+        db.add(Notification(
+            recipient_id=post.author_id,
+            post_id=post.post_id,
+            notification_type="SCHEDULE_REMINDER",
+            title=title,
+            message=message
+        ))
+        await ws_manager.send_to_user(post.author_id, {
+            "type": "SCHEDULE_REMINDER",
+            "post_id": post.post_id,
+            "title": title,
+            "message": message,
+            "minutes_left": 0,
+            "scheduled_time": sched.scheduled_time.isoformat()
+        })
+        logger.info(f"[On-Time] Đã đến giờ đăng bài #{post.post_id}. Kích hoạt tự động xuất bản.")
+
+        try:
+            pub_res = await AutoPublishService.execute_auto_publish(db, post, sched, now)
+            if pub_res.get("success"):
+                logger.info(f"[AutoPublish] Tự động xuất bản thành công bài #{post.post_id}")
+                return True
+        except Exception as pub_err:
+            logger.error(f"[AutoPublish Error] Lỗi khi tự động xuất bản bài #{post.post_id}: {pub_err}")
+        return False
+
+    async def _send_overdue_alerts(self, db: Session, sched: Schedule, post: Post) -> None:
+        """Gửi cảnh báo quá hạn 15 phút tới cả Staff (tác giả) và toàn bộ Manager."""
+        sched.is_overdue_alerted = True
+        sched.is_reminded_30m = True
+        sched.is_reminded_10m = True
+        sched.is_reminded_ontime = True
+
+        staff_title = "CẢNH BÁO: Quá hạn đăng bài 15 phút!"
+        staff_msg = f"Bài viết '{post.title}' đã quá giờ đăng 15 phút ({sched.scheduled_time.strftime('%H:%M %d/%m/%Y')}) nhưng chưa được xuất bản. Vui lòng kiểm tra và xử lý ngay!"
+        db.add(Notification(
+            recipient_id=post.author_id,
+            post_id=post.post_id,
+            notification_type="OVERDUE_ALERT",
+            title=staff_title,
+            message=staff_msg
+        ))
+        await ws_manager.send_to_user(post.author_id, {
+            "type": "OVERDUE_ALERT",
+            "post_id": post.post_id,
+            "title": staff_title,
+            "message": staff_msg,
+            "minutes_overdue": 15,
+            "scheduled_time": sched.scheduled_time.isoformat()
+        })
+
+        managers = (
+            db.query(User)
+            .join(Role, User.role_id == Role.role_id)
+            .filter(Role.role_code == "MANAGER")
+            .all()
+        )
+        mgr_title = f"Cảnh báo quá hạn đăng bài #{post.post_id} (15 phút)"
+        mgr_msg = f"Bài viết '{post.title}' của nhân viên (Mã tác giả: {post.author_id}) đã quá hạn đăng 15 phút ({sched.scheduled_time.strftime('%H:%M %d/%m/%Y')}) nhưng chưa xuất bản."
+        for mgr in managers:
+            if mgr.user_id != post.author_id:
+                db.add(Notification(
+                    recipient_id=mgr.user_id,
+                    post_id=post.post_id,
+                    notification_type="OVERDUE_ALERT",
+                    title=mgr_title,
+                    message=mgr_msg
+                ))
+
+        await ws_manager.broadcast_to_role("MANAGER", {
+            "type": "OVERDUE_ALERT",
+            "post_id": post.post_id,
+            "title": mgr_title,
+            "message": mgr_msg,
+            "author_id": post.author_id,
+            "minutes_overdue": 15,
+            "scheduled_time": sched.scheduled_time.isoformat()
+        })
+        logger.warning(
+            f"[Overdue 15m] Đã gửi cảnh báo quá hạn 15 phút cho bài #{post.post_id} "
+            f"tới Staff #{post.author_id} và {len(managers)} Managers."
+        )
+
     async def run(self):
         """
         Vòng lặp chạy ngầm định kỳ mỗi interval_seconds (mặc định 60 giây).
         """
         self.is_running = True
-        logger.info(f"🚀 [FR-12] ReminderCronWorker đã khởi động. Chu kỳ quét: {self.interval_seconds} giây.")
+        logger.info(f"[FR-12] ReminderCronWorker đã khởi động. Chu kỳ quét: {self.interval_seconds} giây.")
         while self.is_running:
             try:
                 await self.scan_and_process()
             except asyncio.CancelledError:
-                logger.info("🛑 ReminderCronWorker đã nhận tín hiệu dừng.")
+                logger.info("ReminderCronWorker đã nhận tín hiệu dừng.")
                 self.is_running = False
                 break
             except Exception as e:
@@ -256,7 +250,7 @@ class ReminderCronWorker:
             try:
                 await asyncio.sleep(self.interval_seconds)
             except asyncio.CancelledError:
-                logger.info("🛑 ReminderCronWorker đã bị hủy trong lúc sleep.")
+                logger.info("ReminderCronWorker đã bị hủy trong lúc sleep.")
                 self.is_running = False
                 break
 

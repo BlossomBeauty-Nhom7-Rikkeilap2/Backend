@@ -1,5 +1,7 @@
 import json
 import logging
+import mimetypes
+import os
 from datetime import datetime
 from typing import Dict, Any, Optional
 from sqlalchemy.orm import Session
@@ -9,7 +11,8 @@ from app.models.schedule import Schedule
 from app.models.notification import Notification
 from app.models.user import User
 from app.models.platform import Platform
-from app.services.facebook_service import FacebookGraphService
+from app.services.facebook_service import FacebookGraphService, ThreadsGraphService
+from app.services.media_service import MediaUploadService
 from app.core.websocket import manager as ws_manager
 from app.config import settings
 
@@ -17,12 +20,52 @@ logger = logging.getLogger("AutoPublish")
 
 class AutoPublishService:
     @staticmethod
+    def _ensure_public_media_url(db: Session, post: Post, media_url: str) -> str:
+        """Neu media_url la tep cuc bo (/uploads/...), tu dong day len R2 de co URL HTTPS cong khai cho Meta."""
+        is_local = media_url.startswith("/uploads/") or (
+            ("localhost" in media_url or "127.0.0.1" in media_url) and "/uploads/" in media_url
+        )
+        if not is_local:
+            return media_url
+
+        filename = media_url.split("/uploads/")[-1].split("?")[0]
+        local_path = os.path.join(settings.LOCAL_UPLOAD_DIR, filename)
+        if not os.path.exists(local_path):
+            return media_url
+
+        s3_client = MediaUploadService.get_s3_client()
+        if not (s3_client and settings.R2_BUCKET_NAME and settings.R2_PUBLIC_URL):
+            return media_url
+
+        try:
+            content_type, _ = mimetypes.guess_type(local_path)
+            with open(local_path, "rb") as f:
+                s3_client.put_object(
+                    Bucket=settings.R2_BUCKET_NAME,
+                    Key=filename,
+                    Body=f.read(),
+                    ContentType=content_type or "application/octet-stream"
+                )
+            public_url = f"{settings.R2_PUBLIC_URL.rstrip('/')}/{filename}"
+            post.media_files = [public_url]
+            db.commit()
+            logger.info(f"Da tu dong day anh cuc bo len R2 cho bai #{post.post_id}: {public_url}")
+            return public_url
+        except Exception as e:
+            logger.error(f"Khong the day anh cuc bo len R2 cho bai #{post.post_id}: {e}")
+            return media_url
+
+    @staticmethod
     async def publish_post_now(db: Session, post_id: int, current_user: Optional[User] = None) -> Dict[str, Any]:
         """Tự động xuất bản ngay lập tức một bài viết đã duyệt hoặc đã lên lịch."""
         post = db.query(Post).filter(Post.post_id == post_id, Post.deleted_at.is_(None)).first()
         if not post:
             return {"success": False, "error": "Không tìm thấy bài viết"}
-        
+
+        if current_user and current_user.role and current_user.role.role_code == "STAFF":
+            if post.author_id != current_user.user_id:
+                return {"success": False, "error": "Bạn chỉ có thể tự động xuất bản bài viết của chính mình"}
+
         if post.status not in ["APPROVED", "SCHEDULED"]:
             return {"success": False, "error": f"Chỉ có thể tự động đăng bài viết đã duyệt (APPROVED) hoặc đã lên lịch (SCHEDULED). Trạng thái hiện tại: {post.status}"}
 
@@ -48,6 +91,15 @@ class AutoPublishService:
                     media_url = files[0]
             except Exception:
                 media_url = None
+
+        # Neu media_url la duong dan cuc bo (/uploads/... hoac localhost), tu dong day len Cloudflare R2 neu R2 da cau hinh
+        if media_url:
+            media_url = AutoPublishService._ensure_public_media_url(db, post, media_url)
+            if media_url and (media_url.startswith("/") or "localhost" in media_url or "127.0.0.1" in media_url):
+                return {
+                    "success": False,
+                    "error": "Ảnh đính kèm đang lưu cục bộ (/uploads/...) nên Facebook/Instagram không thể tải được. Vui lòng khởi động lại Backend để nạp cấu hình Cloudflare R2 rồi thử lại."
+                }
 
         published_url = None
         api_response = {}
@@ -79,7 +131,7 @@ class AutoPublishService:
                             "error": f"Lỗi Facebook API: {error_detail}"
                         }
 
-                    fb_post_id = fb_res.get("id") or fb_res.get("post_id")
+                    fb_post_id = fb_res.get("post_id") or fb_res.get("id")
                     if fb_post_id:
                         published_url = f"https://www.facebook.com/{fb_post_id}"
                     else:
@@ -103,25 +155,79 @@ class AutoPublishService:
         elif "INSTAGRAM" in platform_code:
             ig_id = settings.IG_ACCOUNT_ID
             ig_token = settings.IG_ACCESS_TOKEN
-            if ig_id and ig_token and media_url:
-                try:
-                    ig_res = FacebookGraphService.publish_photo_to_instagram(
-                        ig_user_id=ig_id,
-                        access_token=ig_token,
-                        image_url=media_url,
-                        caption=caption
-                    )
-                    api_response = ig_res
-                    published_url = f"https://www.instagram.com/p/auto_{post.post_id}/"
-                except Exception as e:
-                    logger.error(f"Lỗi khi gọi Instagram API: {e}")
-                    published_url = f"https://www.instagram.com/p/blossom_{post.post_id}_{int(now.timestamp())}/"
-            else:
-                published_url = f"https://www.instagram.com/p/blossom_{post.post_id}_{int(now.timestamp())}/"
+            if not ig_id or not ig_token:
+                return {
+                    "success": False,
+                    "error": "Chưa cấu hình IG_ACCOUNT_ID hoặc IG_ACCESS_TOKEN trong file .env để đăng bài lên Instagram thật!"
+                }
 
-        # 3. TIKTOK & OTHER
+            if not media_url:
+                return {
+                    "success": False,
+                    "error": "Instagram yêu cầu bắt buộc phải có ít nhất 1 hình ảnh hoặc video công khai (media_files) để đăng bài."
+                }
+
+            try:
+                logger.info(f"Đang gọi Instagram Content Publishing API cho bài #{post.post_id} lên tài khoản {ig_id}...")
+                ig_res = FacebookGraphService.publish_photo_to_instagram(
+                    ig_user_id=ig_id,
+                    access_token=ig_token,
+                    image_url=media_url,
+                    caption=caption
+                )
+                api_response = ig_res
+                if not ig_res.get("success"):
+                    error_detail = ig_res.get("error", "Lỗi từ Instagram API")
+                    logger.error(f"Instagram Graph API trả về lỗi: {error_detail}")
+                    return {
+                        "success": False,
+                        "error": f"Lỗi Instagram API: {error_detail}"
+                    }
+
+                published_url = ig_res.get("permalink") or f"https://www.instagram.com/p/{ig_res.get('ig_media_id')}/"
+            except Exception as e:
+                logger.error(f"Lỗi kết nối khi gọi Instagram API: {e}")
+                return {
+                    "success": False,
+                    "error": f"Lỗi kết nối mạng khi gọi Instagram API: {str(e)}"
+                }
+
+        # 3. THREADS & OTHER
         else:
-            published_url = f"https://www.tiktok.com/@blossombeautystore/video/{post.post_id}{int(now.timestamp())}"
+            threads_uid = settings.THREADS_USER_ID
+            threads_token = settings.THREADS_ACCESS_TOKEN
+
+            if threads_uid and threads_token:
+                try:
+                    logger.info(f"Đang gọi Threads Graph API cho bài #{post.post_id} lên tài khoản {threads_uid}...")
+                    th_res = ThreadsGraphService.publish_thread(
+                        threads_user_id=threads_uid,
+                        access_token=threads_token,
+                        text=caption,
+                        image_url=media_url
+                    )
+                    api_response = th_res
+                    if not th_res.get("success"):
+                        error_detail = th_res.get("error", "Lỗi từ Threads API")
+                        logger.error(f"Threads Graph API trả về lỗi: {error_detail}")
+                        return {
+                            "success": False,
+                            "error": f"Lỗi Threads API: {error_detail}"
+                        }
+                    published_url = th_res.get("permalink") or f"https://www.threads.net/post/{th_res.get('threads_media_id')}"
+                except Exception as e:
+                    logger.error(f"Lỗi khi gọi Threads API: {e}")
+                    return {
+                        "success": False,
+                        "error": f"Lỗi kết nối mạng khi gọi Threads API: {str(e)}"
+                    }
+            else:
+                err_msg = "Chưa cấu hình THREADS_USER_ID hoặc THREADS_ACCESS_TOKEN trong file .env để đăng bài lên Threads thật!"
+                logger.warning(err_msg)
+                return {
+                    "success": False,
+                    "error": err_msg
+                }
 
         # CẬP NHẬT TRẠNG THÁI POST VÀ SCHEDULE
         post.status = "PUBLISHED"
@@ -138,7 +244,7 @@ class AutoPublishService:
             recipient_id=post.author_id,
             post_id=post.post_id,
             notification_type="SCHEDULE_REMINDER",
-            title="Tự động xuất bản thành công! 🎉",
+            title="Tự động xuất bản thành công!",
             message=notif_msg
         )
         db.add(author_notif)

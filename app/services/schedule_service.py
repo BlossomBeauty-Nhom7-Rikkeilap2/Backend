@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -11,23 +11,34 @@ from app.schemas.schedule import ScheduleUpdate
 
 class ScheduleService:
     @staticmethod
-    def get_calendar(db: Session, start_date: datetime, end_date: datetime) -> List[Dict[str, Any]]:
+    def get_calendar(
+        db: Session,
+        start_date: datetime,
+        end_date: datetime,
+        current_user: Optional[User] = None
+    ) -> List[Dict[str, Any]]:
         """Lấy danh sách sự kiện trên Content Calendar theo khoảng thời gian (FR-11)."""
-        schedules = (
-            db.query(Schedule, Post, Platform)
+        query = (
+            db.query(Schedule, Post, Platform, User)
             .join(Post, Schedule.post_id == Post.post_id)
             .join(Platform, Post.platform_id == Platform.platform_id)
+            .join(User, Post.author_id == User.user_id)
             .filter(
                 Schedule.scheduled_time >= start_date,
                 Schedule.scheduled_time <= end_date,
-                Schedule.schedule_status == "ACTIVE",
+                Schedule.schedule_status.in_(["ACTIVE", "COMPLETED"]),
                 Post.deleted_at.is_(None)
             )
-            .all()
         )
 
+        # Staff chỉ xem lịch đăng của bài viết do mình phụ trách
+        if current_user and current_user.role and current_user.role.role_code == "STAFF":
+            query = query.filter(Post.author_id == current_user.user_id)
+
+        schedules = query.order_by(Schedule.scheduled_time.asc()).all()
+
         results = []
-        for sched, post, platform in schedules:
+        for sched, post, platform, author in schedules:
             results.append({
                 "schedule_id": sched.schedule_id,
                 "post_id": post.post_id,
@@ -36,7 +47,9 @@ class ScheduleService:
                 "color_hex": platform.color_hex,
                 "scheduled_time": sched.scheduled_time,
                 "schedule_status": sched.schedule_status,
-                "post_status": post.status
+                "post_status": post.status,
+                "author_name": author.full_name,
+                "author_username": author.username
             })
         return results
 
@@ -49,6 +62,12 @@ class ScheduleService:
         post = db.query(Post).filter(Post.post_id == post_id, Post.deleted_at.is_(None)).first()
         if not post:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy bài viết")
+
+        if current_user.role and current_user.role.role_code == "STAFF" and post.author_id != current_user.user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Bạn chỉ có thể điều chỉnh lịch đăng cho bài viết của chính mình"
+            )
 
         if post.status not in ["APPROVED", "SCHEDULED"]:
             raise HTTPException(
@@ -76,8 +95,9 @@ class ScheduleService:
             schedule.is_reminded_ontime = False
             schedule.is_overdue_alerted = False
 
-        # Chuyển trạng thái Post sang SCHEDULED theo Post State Machine (SDD 3.3)
+        # Chuyển trạng thái Post sang SCHEDULED và đồng bộ planned_publish_time (SDD 3.3)
         post.status = "SCHEDULED"
+        post.planned_publish_time = schedule_in.scheduled_time
 
         db.commit()
         db.refresh(schedule)

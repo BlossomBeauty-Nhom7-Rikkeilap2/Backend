@@ -1,17 +1,18 @@
 from typing import Dict, Any, Optional
+from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, Query, Body, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.models.user import User
 from app.models.post import Post
 from app.schemas.analytics import PostStatisticCreate, PostStatisticResponse
-from app.services.facebook_service import FacebookGraphService
-from app.services.tiktok_service import TikTokApiService
+from app.services.facebook_service import FacebookGraphService, ThreadsGraphService
 from app.services.analytics_service import AnalyticsService
 
-router = APIRouter(prefix="/social", tags=["Social Media Integration (Facebook, Instagram & TikTok)"])
+router = APIRouter(prefix="/social", tags=["Social Media Integration (Facebook, Instagram & Threads)"])
 
 # ==============================================================================
 # FACEBOOK & INSTAGRAM GRAPH API INTEGRATION ENDPOINTS
@@ -62,6 +63,27 @@ def get_managed_accounts(
     pages = FacebookGraphService.get_managed_pages(user_access_token)
     return {"data": pages}
 
+def _extract_id_from_url(published_url: Optional[str]) -> Optional[str]:
+    if not published_url:
+        return None
+    path = urlparse(published_url).path.strip("/")
+    if not path:
+        return None
+    return path.split("/")[-1] or None
+
+
+def _get_accessible_post(db: Session, post_id: int, current_user: User) -> Post:
+    post = db.query(Post).filter(Post.post_id == post_id, Post.deleted_at.is_(None)).first()
+    if not post:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy bài viết")
+    if current_user.role and current_user.role.role_code == "STAFF" and post.author_id != current_user.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Bạn chỉ có thể đồng bộ số liệu cho bài viết của chính mình"
+        )
+    return post
+
+
 @router.post(
     "/posts/{post_id}/sync-facebook",
     response_model=PostStatisticResponse,
@@ -70,17 +92,23 @@ def get_managed_accounts(
 )
 def sync_facebook_post_statistics(
     post_id: int,
-    fb_post_id: str = Body(..., embed=True, description="ID bài đăng trên Facebook (dạng {page_id}_{post_id})"),
-    access_token: str = Body(..., embed=True, description="Page Access Token hoặc User Access Token"),
+    fb_post_id: Optional[str] = Body(None, embed=True, description="ID bài đăng trên Facebook (mặc định trích từ published_url)"),
+    access_token: Optional[str] = Body(None, embed=True, description="Page Access Token (mặc định dùng cấu hình .env)"),
     milestone: Optional[str] = Body(None, embed=True, description="Mốc thời gian (24H, 7D, 30D, CUSTOM)"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    post = db.query(Post).filter(Post.post_id == post_id, Post.deleted_at.is_(None)).first()
-    if not post:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy bài viết")
+    post = _get_accessible_post(db, post_id, current_user)
 
-    metrics = FacebookGraphService.get_facebook_post_insights(fb_post_id, access_token)
+    resolved_id = (fb_post_id or _extract_id_from_url(post.published_url) or "").strip()
+    resolved_token = (access_token or settings.FB_PAGE_ACCESS_TOKEN or "").strip()
+    if not resolved_id or not resolved_token:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Thiếu fb_post_id hoặc FB_PAGE_ACCESS_TOKEN để đồng bộ dữ liệu Facebook"
+        )
+
+    metrics = FacebookGraphService.get_facebook_post_insights(resolved_id, resolved_token)
     if not metrics.get("success"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -106,17 +134,23 @@ def sync_facebook_post_statistics(
 )
 def sync_instagram_post_statistics(
     post_id: int,
-    ig_media_id: str = Body(..., embed=True, description="ID bài đăng (Media ID) trên Instagram"),
-    access_token: str = Body(..., embed=True, description="Page Access Token của Trang liên kết với tài khoản Instagram"),
+    ig_media_id: Optional[str] = Body(None, embed=True, description="ID bài đăng (Media ID) trên Instagram"),
+    access_token: Optional[str] = Body(None, embed=True, description="Access Token (mặc định dùng cấu hình .env)"),
     milestone: Optional[str] = Body(None, embed=True, description="Mốc thời gian (24H, 7D, 30D, CUSTOM)"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    post = db.query(Post).filter(Post.post_id == post_id, Post.deleted_at.is_(None)).first()
-    if not post:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy bài viết")
+    post = _get_accessible_post(db, post_id, current_user)
 
-    metrics = FacebookGraphService.get_instagram_media_insights(ig_media_id, access_token)
+    resolved_id = (ig_media_id or _extract_id_from_url(post.published_url) or "").strip()
+    resolved_token = (access_token or settings.IG_ACCESS_TOKEN or "").strip()
+    if not resolved_id or not resolved_token:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Thiếu ig_media_id hoặc IG_ACCESS_TOKEN để đồng bộ dữ liệu Instagram"
+        )
+
+    metrics = FacebookGraphService.get_instagram_media_insights(resolved_id, resolved_token, published_url=post.published_url)
     if not metrics.get("success"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -134,66 +168,35 @@ def sync_instagram_post_statistics(
     )
     return AnalyticsService.record_statistics(db, post_id, stat_in, current_user)
 
-# ==============================================================================
-# TIKTOK OPEN API V2 INTEGRATION ENDPOINTS
-# ==============================================================================
-
-@router.get(
-    "/tiktok/login-url",
-    summary="Lấy URL đăng nhập TikTok OAuth 2.0 (Login Kit v2)",
-    description="Tạo đường dẫn xác thực với TikTok for Developers để cấp quyền đọc video và phân tích chỉ số."
-)
-def get_tiktok_login_url(
-    redirect_uri: str = Query("http://localhost:5500/oauth/tiktok/callback", description="Địa chỉ callback của Frontend"),
-    current_user: User = Depends(get_current_user)
-):
-    url = TikTokApiService.get_authorization_url(redirect_uri=redirect_uri, state=str(current_user.user_id))
-    return {
-        "oauth_url": url,
-        "redirect_uri": redirect_uri
-    }
-
 @router.post(
-    "/tiktok/exchange-token",
-    summary="Đổi mã Code lấy TikTok Access Token & Refresh Token",
-    description="Nhận authorization code từ frontend sau khi người dùng đăng nhập TikTok thành công và đổi lấy Token."
-)
-def exchange_tiktok_code(
-    code: str = Body(..., embed=True),
-    redirect_uri: str = Body("http://localhost:5500/oauth/tiktok/callback", embed=True),
-    current_user: User = Depends(get_current_user)
-):
-    token_data = TikTokApiService.exchange_code_for_token(code, redirect_uri)
-    if not token_data.get("success"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Lỗi xác thực với TikTok: {token_data.get('error', 'Unknown error')}"
-        )
-    return token_data
-
-@router.post(
-    "/posts/{post_id}/sync-tiktok",
+    "/posts/{post_id}/sync-threads",
     response_model=PostStatisticResponse,
-    summary="Tự động đồng bộ số liệu video từ TikTok Open API (FR-14 & BR-08)",
-    description="Gọi trực tiếp TikTok API v2 để lấy Lượt xem, Thích, Bình luận, Chia sẻ và lưu vào CSDL với source_type='API'."
+    summary="Tự động đồng bộ số liệu từ Threads Graph API (FR-14 & BR-08)",
+    description="Gọi trực tiếp Threads Graph API để lấy Views, Likes, Replies, Reposts và lưu vào bảng post_statistics với source_type='API'."
 )
-def sync_tiktok_video_statistics(
+def sync_threads_post_statistics(
     post_id: int,
-    video_id: str = Body(..., embed=True, description="ID của Video trên kênh TikTok"),
-    access_token: str = Body(..., embed=True, description="User Access Token của tài khoản TikTok liên kết"),
+    threads_media_id: Optional[str] = Body(None, embed=True, description="ID bài đăng trên Threads"),
+    access_token: Optional[str] = Body(None, embed=True, description="Threads User Access Token (mặc định dùng cấu hình .env)"),
     milestone: Optional[str] = Body(None, embed=True, description="Mốc thời gian (24H, 7D, 30D, CUSTOM)"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    post = db.query(Post).filter(Post.post_id == post_id, Post.deleted_at.is_(None)).first()
-    if not post:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy bài viết")
+    post = _get_accessible_post(db, post_id, current_user)
 
-    metrics = TikTokApiService.get_video_insights(video_id, access_token)
+    resolved_id = (threads_media_id or _extract_id_from_url(post.published_url) or "").strip()
+    resolved_token = (access_token or settings.THREADS_ACCESS_TOKEN or "").strip()
+    if not resolved_id or not resolved_token:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Thiếu threads_media_id hoặc THREADS_ACCESS_TOKEN để đồng bộ dữ liệu Threads"
+        )
+
+    metrics = ThreadsGraphService.get_threads_insights(resolved_id, resolved_token, published_url=post.published_url)
     if not metrics.get("success"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Không thể lấy dữ liệu từ TikTok: {metrics.get('error', 'Unknown error')}"
+            detail=f"Không thể lấy dữ liệu từ Threads: {metrics.get('error', 'Unknown error')}"
         )
 
     stat_in = PostStatisticCreate(
@@ -211,7 +214,7 @@ def sync_tiktok_video_statistics(
     "/posts/{post_id}/sync-mock",
     response_model=PostStatisticResponse,
     summary="Đồng bộ số liệu mô phỏng qua Mock API (FR-14 & Gợi ý thưởng +1)",
-    description="Mô phỏng đồng bộ chỉ số đo lường API cho bài viết Facebook, Instagram, Threads hoặc TikTok mà không cần Token thật."
+    description="Mô phỏng đồng bộ chỉ số đo lường API cho bài viết Facebook, Instagram hoặc Threads mà không cần Token thật."
 )
 def sync_social_mock_statistics(
     post_id: int,
